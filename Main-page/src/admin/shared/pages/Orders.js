@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -11,74 +11,134 @@ import {
   X
 } from 'lucide-react';
 import Modal from '../components/Modal';
+import { supabase } from '../../../services/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 const Orders = () => {
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [orders, setOrders] = useState([
-    {
-      id: '#12345',
-      customer: '김철수',
-      customerEmail: 'kim@email.com',
-      products: ['스마트폰 케이스', '무선 충전기'],
-      amount: 45000,
-      status: '배송중',
-      date: '2024-01-15',
-      paymentMethod: '카드결제',
-      address: '서울특별시 강남구 테헤란로 123',
-      phone: '010-1234-5678'
-    },
-    {
-      id: '#12346',
-      customer: '이영희',
-      customerEmail: 'lee@email.com',
-      products: ['무선 이어폰'],
-      amount: 89000,
-      status: '결제완료',
-      date: '2024-01-15',
-      paymentMethod: '계좌이체',
-      address: '서울특별시 서초구 서초대로 456',
-      phone: '010-2345-6789'
-    },
-    {
-      id: '#12347',
-      customer: '박민수',
-      customerEmail: 'park@email.com',
-      products: ['노트북 스탠드', '마우스 패드'],
-      amount: 65000,
-      status: '배송완료',
-      date: '2024-01-14',
-      paymentMethod: '카드결제',
-      address: '부산광역시 해운대구 해운대로 789',
-      phone: '010-3456-7890'
-    },
-    {
-      id: '#12348',
-      customer: '정수진',
-      customerEmail: 'jung@email.com',
-      products: ['블루투스 스피커'],
-      amount: 120000,
-      status: '주문접수',
-      date: '2024-01-15',
-      paymentMethod: '무통장입금',
-      address: '대구광역시 중구 중앙대로 321',
-      phone: '010-4567-8901'
-    },
-    {
-      id: '#12349',
-      customer: '최동현',
-      customerEmail: 'choi@email.com',
-      products: ['휴대폰 충전기', '케이블'],
-      amount: 25000,
-      status: '취소요청',
-      date: '2024-01-13',
-      paymentMethod: '카드결제',
-      address: '인천광역시 남동구 구월로 654',
-      phone: '010-5678-9012'
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // 주문 데이터를 UI 형식으로 변환하는 함수
+  const transformOrderData = (order) => {
+    const products = order.items ? order.items.map(item => item.name) : ['상품 정보 없음'];
+    
+    return {
+      id: `#${order.id.slice(0, 8)}`, // UUID의 앞 8자리만 표시
+      originalId: order.id, // 전체 UUID 보관
+      customer: order.recipient_name || '고객 정보 없음',
+      customerEmail: '이메일 정보 없음', // users 테이블과 조인 필요
+      products: products,
+      amount: order.total_amount,
+      status: order.status,
+      date: new Date(order.order_date).toISOString().split('T')[0],
+      paymentMethod: order.payment_method,
+      address: order.shipping_address,
+      phone: order.recipient_phone,
+      paymentKey: order.payment_key,
+      trackingNumber: order.tracking_number,
+      estimatedDelivery: order.estimated_delivery ? new Date(order.estimated_delivery).toISOString().split('T')[0] : null,
+      items: order.items || []
+    };
+  };
+
+  // 주문 데이터 가져오기
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      let query = supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      // 사용자 역할에 따른 필터링
+      if (user?.user_metadata?.role === 'merchant') {
+        // 입점사 관리자: 해당 브랜드의 주문만 조회
+        // items 배열에서 특정 브랜드의 상품이 포함된 주문을 찾아야 함
+        // 일단 모든 주문을 가져온 후 클라이언트에서 필터링
+        const { data, error } = await query;
+        
+        if (error) {
+          console.error('주문 데이터 조회 오류:', error);
+          return;
+        }
+
+        // 입점사 관리자의 브랜드명 추출 (실제로는 brand_admins 테이블에서 가져와야 함)
+        const merchantBrand = user?.user_metadata?.brand || '브랜드명';
+        
+        // 해당 브랜드의 상품이 포함된 주문만 필터링
+        const filteredOrders = data.filter(order => {
+          if (!order.items || !Array.isArray(order.items)) return false;
+          return order.items.some(item => item.brand === merchantBrand);
+        });
+
+        // 사용자 이메일 정보를 별도로 조회
+        const userIds = [...new Set(filteredOrders.map(order => order.user_id))];
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, email, name')
+          .in('id', userIds);
+
+        const usersMap = {};
+        if (usersData) {
+          usersData.forEach(user => {
+            usersMap[user.id] = user;
+          });
+        }
+
+        const transformedOrders = filteredOrders.map(order => ({
+          ...transformOrderData(order),
+          customerEmail: usersMap[order.user_id]?.email || '이메일 정보 없음'
+        }));
+        
+        setOrders(transformedOrders);
+      } else {
+        // HQ 관리자: 모든 주문 조회
+        const { data, error } = await query;
+        
+        if (error) {
+          console.error('주문 데이터 조회 오류:', error);
+          return;
+        }
+
+        // 사용자 이메일 정보를 별도로 조회
+        const userIds = [...new Set(data.map(order => order.user_id))];
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, email, name')
+          .in('id', userIds);
+
+        const usersMap = {};
+        if (usersData) {
+          usersData.forEach(user => {
+            usersMap[user.id] = user;
+          });
+        }
+
+        const transformedOrders = data.map(order => ({
+          ...transformOrderData(order),
+          customerEmail: usersMap[order.user_id]?.email || '이메일 정보 없음'
+        }));
+        
+        setOrders(transformedOrders);
+      }
+    } catch (error) {
+      console.error('주문 데이터 가져오기 실패:', error);
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
+
+  // 컴포넌트 마운트 시 데이터 로드
+  useEffect(() => {
+    if (user) {
+      fetchOrders();
+    }
+  }, [user]);
 
   // 주문 관리 함수들
   const handleViewOrder = (order) => {
@@ -86,14 +146,42 @@ const Orders = () => {
     setShowDetailModal(true);
   };
 
-  const handleUpdateOrderStatus = (orderId, newStatus) => {
-    setOrders(orders.map(order => 
-      order.id === orderId ? { ...order, status: newStatus } : order
-    ));
-    alert(`주문 상태가 '${newStatus}'로 변경되었습니다.`);
+  const handleUpdateOrderStatus = async (orderId, newStatus) => {
+    try {
+      // orderId는 '#12345678' 형태이므로 원본 UUID를 찾아야 함
+      const order = orders.find(o => o.id === orderId);
+      if (!order) {
+        alert('주문을 찾을 수 없습니다.');
+        return;
+      }
+
+      // Supabase에서 주문 상태 업데이트
+      const { error } = await supabase
+        .from('orders')
+        .update({ 
+          status: newStatus,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', order.originalId);
+
+      if (error) {
+        console.error('주문 상태 업데이트 오류:', error);
+        alert('주문 상태 변경에 실패했습니다.');
+        return;
+      }
+
+      // UI 상태 업데이트
+      setOrders(orders.map(order => 
+        order.id === orderId ? { ...order, status: newStatus } : order
+      ));
+      alert(`주문 상태가 '${newStatus}'로 변경되었습니다.`);
+    } catch (error) {
+      console.error('주문 상태 변경 실패:', error);
+      alert('주문 상태 변경에 실패했습니다.');
+    }
   };
 
-  const handleBulkStatusUpdate = (status) => {
+  const handleBulkStatusUpdate = async (status) => {
     const eligibleOrders = orders.filter(order => {
       if (status === '결제완료') return order.status === '주문접수';
       if (status === '배송중') return order.status === '결제완료';
@@ -106,12 +194,36 @@ const Orders = () => {
     }
 
     if (window.confirm(`${eligibleOrders.length}개 주문을 '${status}' 상태로 변경하시겠습니까?`)) {
-      setOrders(orders.map(order => 
-        eligibleOrders.some(eligible => eligible.id === order.id) 
-          ? { ...order, status } 
-          : order
-      ));
-      alert(`${eligibleOrders.length}개 주문이 '${status}' 상태로 변경되었습니다.`);
+      try {
+        // 선택된 주문들의 원본 ID 추출
+        const orderIds = eligibleOrders.map(order => order.originalId);
+        
+        // Supabase에서 벌크 업데이트
+        const { error } = await supabase
+          .from('orders')
+          .update({ 
+            status: status,
+            updated_at: new Date().toISOString()
+          })
+          .in('id', orderIds);
+
+        if (error) {
+          console.error('벌크 주문 상태 업데이트 오류:', error);
+          alert('주문 상태 변경에 실패했습니다.');
+          return;
+        }
+
+        // UI 상태 업데이트
+        setOrders(orders.map(order => 
+          eligibleOrders.some(eligible => eligible.id === order.id) 
+            ? { ...order, status } 
+            : order
+        ));
+        alert(`${eligibleOrders.length}개 주문이 '${status}' 상태로 변경되었습니다.`);
+      } catch (error) {
+        console.error('벌크 주문 상태 변경 실패:', error);
+        alert('주문 상태 변경에 실패했습니다.');
+      }
     }
   };
 
@@ -175,6 +287,24 @@ const Orders = () => {
       count: orders.filter(order => order.status === status.value).length
     }));
   };
+
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '400px',
+        fontSize: '18px',
+        color: '#666'
+      }}>
+        <div>
+          <div style={{ marginBottom: '10px', textAlign: 'center' }}>📦</div>
+          주문 데이터를 불러오는 중...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

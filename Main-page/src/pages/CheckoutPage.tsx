@@ -207,24 +207,18 @@ const CheckoutPage: React.FC = () => {
                 ? orderItems[0].product.name 
                 : `${orderItems[0].product.name} 외 ${orderItems.length - 1}건`
 
-            // 1. 먼저 주문을 데이터베이스에 생성 (상태: '주문접수')
+            // 1. 주문 데이터 준비 (결제 성공 후 생성할 데이터)
             const orderData = await createOrderData(orderId)
             if (!orderData) {
                 alert('주문 데이터 생성에 실패했습니다. 다시 시도해주세요.')
                 return
             }
-            
-            const createdOrder = await createOrder(orderData)
-            if (!createdOrder) {
-                alert('주문 생성에 실패했습니다. 다시 시도해주세요.')
-                return
-            }
 
-            console.log('주문이 생성되었습니다:', createdOrder)
+            console.log('주문 데이터가 준비되었습니다:', orderData)
 
-            // 2. 주문 정보를 세션 스토리지에 임시 저장 (결제 성공 페이지에서 사용)
-            sessionStorage.setItem('currentOrder', JSON.stringify({
-                ...createdOrder,
+            // 2. 주문 데이터를 세션 스토리지에 임시 저장 (결제 성공 시 생성할 데이터)
+            sessionStorage.setItem('pendingOrderData', JSON.stringify({
+                orderData,
                 selectedCoupon,
                 discountAmount,
                 originalAmount: totalPrice
@@ -279,24 +273,18 @@ const CheckoutPage: React.FC = () => {
             const orderId = tossPaymentsService.generateOrderId()
             const paymentKey = `test_payment_${Date.now()}`
             
-            // 1. 테스트용 주문 생성
+            // 1. 테스트용 주문 데이터 준비
             const orderData = await createOrderData(orderId)
             if (!orderData) {
                 alert('주문 데이터 생성에 실패했습니다.')
                 return
             }
-            
-            const createdOrder = await createOrder(orderData)
-            if (!createdOrder) {
-                alert('주문 생성에 실패했습니다.')
-                return
-            }
 
-            console.log('테스트 주문이 생성되었습니다:', createdOrder)
+            console.log('테스트 주문 데이터가 준비되었습니다:', orderData)
 
-            // 2. 주문 정보를 세션 스토리지에 저장
-            sessionStorage.setItem('currentOrder', JSON.stringify({
-                ...createdOrder,
+            // 2. 주문 데이터를 세션 스토리지에 임시 저장
+            sessionStorage.setItem('pendingOrderData', JSON.stringify({
+                orderData,
                 selectedCoupon,
                 discountAmount,
                 originalAmount: totalPrice

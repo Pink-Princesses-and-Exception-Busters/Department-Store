@@ -65,8 +65,8 @@ const PaymentSuccessPage: React.FC = () => {
           useCoupon(selectedCoupon.id, orderId, discountAmount)
         }
         
-        // 주문 데이터 생성 및 저장
-        await createOrderFromCart(paymentData)
+        // 결제 성공 시 주문 생성
+        await createOrderAfterPayment(paymentData)
         setLoading(false)
       }, 1000)
     } else {
@@ -74,100 +74,74 @@ const PaymentSuccessPage: React.FC = () => {
     }
   }, []) // 의존성 배열을 비워서 한 번만 실행
 
-  const createOrderFromCart = async (paymentData: any) => {
+  const createOrderAfterPayment = async (paymentData: any) => {
     try {
-      // 현재 로그인한 사용자 정보 가져오기
-      const currentUser = localStorage.getItem('currentUser')
-      if (!currentUser) {
-        console.error('사용자 정보를 찾을 수 없습니다.')
+      // 결제 전 준비된 주문 데이터 가져오기
+      const pendingOrderStr = sessionStorage.getItem('pendingOrderData');
+      if (!pendingOrderStr) {
+        console.error('주문 데이터를 찾을 수 없습니다. 결제는 완료되었지만 주문 생성에 실패했습니다.')
+        alert('결제는 완료되었지만 주문 생성에 실패했습니다. 고객센터에 문의해주세요.')
+        return
+      }
+      
+      const pendingData = JSON.parse(pendingOrderStr);
+      console.log('결제 성공 - 주문 생성 시작:', pendingData)
+      
+      // 주문 데이터에 결제 키 추가하고 상태를 결제완료로 변경
+      const orderDataWithPayment = {
+        ...pendingData.orderData,
+        status: '결제완료' as const, // 결제 완료 상태로 생성
+        payment_key: paymentData.paymentKey,
+        payment_method: paymentData.method || pendingData.orderData.payment_method
+      };
+
+      // 실제 주문 생성
+      const savedOrder = await createOrder(orderDataWithPayment)
+      
+      if (!savedOrder) {
+        console.error('주문 생성에 실패했습니다.')
+        alert('결제는 완료되었지만 주문 생성에 실패했습니다. 고객센터에 문의해주세요.')
         return
       }
 
-      const user = JSON.parse(currentUser)
-      
-      // 장바구니에서 상품 정보 가져오기
-      let cartItems = JSON.parse(localStorage.getItem('cart') || '[]')
-      
-      // 장바구니가 비어있으면 테스트용 상품 데이터 생성
-      if (cartItems.length === 0) {
-        console.log('장바구니가 비어있어 테스트용 상품 데이터를 생성합니다.')
-        cartItems = [
-          {
-            id: 1,
-            name: '프리미엄 울 코트',
-            price: paymentData.amount,
-            quantity: 1,
-            image: '/placeholder-image.jpg',
-            brand: '테스트 브랜드',
-            size: 'FREE',
-            color: '블랙'
-          }
-        ]
-      }
+      console.log('주문이 성공적으로 생성되었습니다:', savedOrder)
+      setOrderCreated(true)
 
-      // 주문 아이템 생성 (더 상세한 정보 포함)
-      const orderItems = cartItems.map((item: any) => ({
-        product_id: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        image: item.image,
-        brand: item.brand || '브랜드 정보 없음',
-        size: item.selectedSize || item.size || 'FREE',
-        color: item.selectedColor || item.color || '색상 정보 없음'
-      }))
-
-      // 배송 예상일 계산 (3-5일 후)
-      const estimatedDelivery = new Date()
-      estimatedDelivery.setDate(estimatedDelivery.getDate() + Math.floor(Math.random() * 3) + 3)
-
-      // 주문 데이터 생성 (더 상세한 정보 포함)
-      const orderData: Omit<Order, 'id' | 'created_at' | 'updated_at'> = {
-        user_id: user.id || user.email, // 사용자 ID 또는 이메일
-        order_date: new Date().toISOString(),
-        status: '결제완료' as const,
-        total_amount: paymentData.amount,
-        payment_method: paymentData.method,
-        payment_key: paymentData.paymentKey,
-        items: orderItems,
-        shipping_address: user.address || '주소 정보 없음',
-        recipient_name: user.name,
-        recipient_phone: user.phone || '010-1234-5678',
-        tracking_number: `TN${Date.now()}`, // 운송장번호 생성
-        estimated_delivery: estimatedDelivery.toISOString() // 예상 배송일
-      }
-
-      // 데이터베이스에 주문 저장
-      const savedOrder = await createOrder(orderData)
-      
-      if (savedOrder) {
-        console.log('주문이 성공적으로 데이터베이스에 저장되었습니다:', savedOrder)
-        setOrderCreated(true)
-        
-        // 성공적으로 저장된 후 로컬스토리지에서도 제거 (중복 방지)
-        const existingOrders = JSON.parse(localStorage.getItem('orders') || '[]')
-        const filteredOrders = existingOrders.filter((order: any) => 
-          order.payment_key !== paymentData.paymentKey
-        )
-        localStorage.setItem('orders', JSON.stringify(filteredOrders))
-      } else {
-        console.error('주문 저장에 실패했습니다.')
-        // 실패 시 로컬스토리지에 임시 저장
-        const existingOrders = JSON.parse(localStorage.getItem('orders') || '[]')
-        const updatedOrders = [...existingOrders, orderData]
-        localStorage.setItem('orders', JSON.stringify(updatedOrders))
+      // 쿠폰 사용 처리
+      if (pendingData.selectedCoupon) {
+        const discountAmount = pendingData.discountAmount || 0
+        useCoupon(pendingData.selectedCoupon.id, savedOrder.id, discountAmount)
+        console.log('쿠폰이 사용 처리되었습니다.')
       }
       
-      // 장바구니 자동 비우기 (결제 완료 후)
+      // 장바구니 비우기
       const currentCart = localStorage.getItem('cart')
       if (currentCart) {
         localStorage.removeItem('cart')
         console.log('장바구니가 자동으로 비워졌습니다.')
       }
+
+      // 임시 주문 데이터 제거
+      sessionStorage.removeItem('pendingOrderData')
+      
+      // 로컬스토리지에 주문 정보 저장 (기존 호환성을 위해)
+      const existingOrders = JSON.parse(localStorage.getItem('orders') || '[]')
+      const newOrder = {
+        id: savedOrder.id,
+        orderId: paymentData.orderId,
+        amount: paymentData.amount,
+        status: '결제완료',
+        date: new Date().toISOString(),
+        payment_key: paymentData.paymentKey,
+        items: savedOrder.items
+      }
+      
+      existingOrders.push(newOrder)
+      localStorage.setItem('orders', JSON.stringify(existingOrders))
       
       // 주문 완료 알림 (한 번만 표시)
       if (!sessionStorage.getItem(`alerted_${paymentData.paymentKey}`)) {
-        alert('주문이 성공적으로 완료되었습니다! 마이페이지로 이동합니다.')
+        alert('주문이 성공적으로 완료되었습니다!')
         sessionStorage.setItem(`alerted_${paymentData.paymentKey}`, 'true')
       }
       
@@ -176,6 +150,7 @@ const PaymentSuccessPage: React.FC = () => {
       
     } catch (error) {
       console.error('주문 생성 중 오류 발생:', error)
+      alert('결제는 완료되었지만 주문 생성에 실패했습니다. 고객센터에 문의해주세요.')
     }
   }
 

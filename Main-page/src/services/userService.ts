@@ -138,6 +138,32 @@ export const getCurrentUser = async (): Promise<AuthUser | null> => {
 
     if (error) {
       console.error('Profile fetch error:', error)
+      
+      // 사용자가 users 테이블에 없으면 생성
+      if (error.code === 'PGRST116') {
+        console.log('사용자가 users 테이블에 없습니다. 새로 생성합니다.')
+        
+        const { data: newUser, error: insertError } = await supabase
+          .from('users')
+          .insert([{
+            id: user.id,
+            email: user.email,
+            name: user.user_metadata?.name || '사용자',
+            phone: user.user_metadata?.phone || '',
+            address: user.user_metadata?.address || '',
+            agree_marketing: user.user_metadata?.agree_marketing || false
+          }])
+          .select()
+          .single()
+
+        if (insertError) {
+          console.error('사용자 생성 실패:', insertError)
+          return null
+        }
+
+        return newUser
+      }
+      
       return null
     }
 

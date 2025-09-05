@@ -36,8 +36,34 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
 
   // 관리자 권한이 필요한 페이지인데 관리자가 아닌 경우
   const isAdmin = (): boolean => {
-    return user?.user_metadata?.role === 'admin' || user?.user_metadata?.role === 'hq';
+    const role = user?.user_metadata?.role;
+    
+    // role이 없으면 일반 고객으로 간주
+    if (!role) {
+      return false;
+    }
+    
+    // admin, hq는 항상 허용
+    if (role === 'admin' || role === 'hq') {
+      return true;
+    }
+    
+    // merchant인 경우에만 허용 (추후 brand_admins 테이블 검증 가능)
+    if (role === 'merchant') {
+      return true;
+    }
+    
+    // 기타 모든 경우는 거부
+    return false;
   };
+
+  console.log('🔍 권한 검사:', {
+    requireAdmin,
+    userEmail: user?.email,
+    userRole: user?.user_metadata?.role,
+    isAdminResult: isAdmin(),
+    userMetadata: user?.user_metadata
+  });
 
   if (requireAdmin && !isAdmin()) {
     console.log('❌ 관리자 권한 부족:', {

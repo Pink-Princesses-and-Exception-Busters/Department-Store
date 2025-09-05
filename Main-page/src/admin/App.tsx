@@ -18,7 +18,7 @@ function App() {
         
         {/* 보호된 라우트 (인증 + Role 기반) */}
         <Route path="/*" element={
-          <ProtectedRoute>
+          <ProtectedRoute requireAdmin={true}>
             <AppRoutes />
           </ProtectedRoute>
         } />
