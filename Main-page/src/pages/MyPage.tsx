@@ -2,18 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useCouponContext } from '../context/CouponContext'
 import UserInfoModal from '../components/UserInfoModal'
-import { getUserOrders, migrateLocalOrdersToDatabase, Order, OrderItem } from '../services/orderService'
-import { useUser } from '../context/UserContext'
-import { logout } from '../services/userService'
-
-interface User {
-    id: string
-    name: string
-    email: string
-    phone: string
-    address: string
-    password?: string
-}
+import { getUserOrders, migrateLocalOrdersToDatabase, Order, cancelOrder } from '../services/orderService'
+import { useUser, User } from '../context/UserContext'
+import { verifyPasswordForAccess, changePassword } from '../services/userService'
 
 
 
@@ -43,7 +34,12 @@ const MyPage: React.FC = () => {
     const [loading, setLoading] = useState(true)
     
     // 회원정보 변경을 위한 상태
-    const [editUserInfo, setEditUserInfo] = useState({
+    const [editUserInfo, setEditUserInfo] = useState<{
+        name: string
+        email: string
+        phone: string
+        address: string
+    }>({
         name: '',
         email: '',
         phone: '',
@@ -55,7 +51,59 @@ const MyPage: React.FC = () => {
     const navigate = useNavigate()
     const { availableCoupons } = useCouponContext()
     const [searchParams] = useSearchParams()
-    const { currentUser, refreshUser } = useUser()
+    const { currentUser } = useUser()
+
+    // 주문 데이터 로드 함수
+    const loadOrders = async () => {
+        if (!currentUser) return
+
+        try {
+            // 데이터베이스에서 사용자 주문 데이터 가져오기
+            let userOrders = await getUserOrders(currentUser.id || currentUser.email || currentUser.name)
+            
+            // 데이터베이스에 주문이 없으면 로컬스토리지에서 마이그레이션 시도
+            if (userOrders.length === 0) {
+                console.log('데이터베이스에 주문이 없어 로컬스토리지에서 마이그레이션을 시도합니다.')
+                const migratedCount = await migrateLocalOrdersToDatabase(currentUser.id || currentUser.email || currentUser.name)
+                if (migratedCount > 0) {
+                    console.log(`${migratedCount}개의 주문이 데이터베이스로 마이그레이션되었습니다.`)
+                    userOrders = await getUserOrders(currentUser.id || currentUser.email || currentUser.name)
+                }
+            }
+            
+            setOrders(userOrders)
+
+            // 주문 통계 계산
+            const oneMonthAgo = new Date()
+            oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1)
+            
+            const recentOrders = userOrders.filter((order: Order) => 
+                order.created_at && new Date(order.created_at) >= oneMonthAgo
+            )
+
+            const total_orders = recentOrders.length
+            const total_amount = recentOrders.reduce((sum: number, order: Order) => sum + order.total_amount, 0)
+
+            const status_counts = recentOrders.reduce((counts: any, order: Order) => {
+                counts[order.status] = (counts[order.status] || 0) + 1
+                return counts
+            }, {
+                '주문접수': 0,
+                '결제완료': 0,
+                '상품준비': 0,
+                '배송중': 0,
+                '배송완료': 0
+            })
+
+            setOrderStats({
+                total_orders,
+                total_amount,
+                status_counts
+            })
+        } catch (error) {
+            console.error('주문 데이터 로드 중 오류:', error)
+        }
+    }
 
     useEffect(() => {
         const loadUserData = async () => {
@@ -75,52 +123,8 @@ const MyPage: React.FC = () => {
             })
 
             try {
-                // 데이터베이스에서 사용자 주문 데이터 가져오기
-                let userOrders = await getUserOrders(currentUser.id || currentUser.email || currentUser.name)
-                
-                // 데이터베이스에 주문이 없으면 로컬스토리지에서 마이그레이션 시도
-                if (userOrders.length === 0) {
-                    console.log('데이터베이스에 주문이 없어 로컬스토리지에서 마이그레이션을 시도합니다.')
-                    const migratedCount = await migrateLocalOrdersToDatabase(currentUser.id || currentUser.email || currentUser.name)
-                    if (migratedCount > 0) {
-                        console.log(`${migratedCount}개의 주문이 데이터베이스로 마이그레이션되었습니다.`)
-                        userOrders = await getUserOrders(currentUser.id || currentUser.email || currentUser.name)
-                    }
-                }
-                
-                setOrders(userOrders)
-
-                // 주문 통계 계산
-                const oneMonthAgo = new Date()
-                oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1)
-                
-                const recentOrders = userOrders.filter((order: Order) => 
-                    order.created_at && new Date(order.created_at) >= oneMonthAgo
-                )
-
-                const total_orders = recentOrders.length
-                const total_amount = recentOrders.reduce((sum: number, order: Order) => sum + order.total_amount, 0)
-                
-                const status_counts = {
-                    '주문접수': 0,
-                    '결제완료': 0,
-                    '상품준비': 0,
-                    '배송중': 0,
-                    '배송완료': 0,
-                    '주문취소': 0,
-                    '반품신청': 0,
-                    '반품완료': 0
-                }
-
-                recentOrders.forEach((order: Order) => {
-                    status_counts[order.status]++
-                })
-
-                setOrderStats({
-                    total_orders,
-                    total_amount,
-                    status_counts
-                })
+                // 주문 데이터 로드
+                await loadOrders()
             } catch (error) {
                 console.error('주문 데이터를 가져오는 중 오류 발생:', error)
             }
@@ -211,16 +215,6 @@ const MyPage: React.FC = () => {
         }
     }, [currentUser])
 
-    const handleLogout = async () => {
-        try {
-            await logout()
-            alert('로그아웃되었습니다.')
-            navigate('/')
-        } catch (error) {
-            console.error('Logout error:', error)
-            alert('로그아웃 중 오류가 발생했습니다.')
-        }
-    }
 
     const handlePersonalInfoClick = (menuItem: string) => {
         if (menuItem === '회원정보변경') {
@@ -231,20 +225,31 @@ const MyPage: React.FC = () => {
         }
     }
 
-    const handlePasswordSubmit = () => {
-        if (password === user?.password) { // 실제 사용자 비밀번호 확인
-            alert(`${selectedMenuItem} 페이지로 이동합니다.`)
-            setShowPasswordModal(false)
-            setPassword('')
-        } else {
-            alert('비밀번호가 올바르지 않습니다.')
+    const handlePasswordSubmit = async () => {
+        if (!password) {
+            alert('비밀번호를 입력해주세요.')
+            return
+        }
+
+        try {
+            const result = await verifyPasswordForAccess(password)
+            
+            if (result.success) {
+                alert(`${selectedMenuItem} 페이지로 이동합니다.`)
+                setShowPasswordModal(false)
+                setPassword('')
+            } else {
+                alert(result.error || '비밀번호 확인에 실패했습니다.')
+            }
+        } catch (error) {
+            console.error('비밀번호 확인 중 오류:', error)
+            alert('비밀번호 확인 중 오류가 발생했습니다.')
         }
     }
 
-    const handleChangePassword = () => {
-        // 현재 비밀번호 확인
-        if (currentPassword !== user?.password) {
-            alert('현재 비밀번호가 올바르지 않습니다.')
+    const handleChangePassword = async () => {
+        if (!currentPassword) {
+            alert('현재 비밀번호를 입력해주세요.')
             return
         }
 
@@ -259,39 +264,21 @@ const MyPage: React.FC = () => {
             return
         }
 
-        // 로컬스토리지에서 사용자 정보 업데이트
-        const currentUser = localStorage.getItem('currentUser')
-        if (currentUser) {
-            const userData = JSON.parse(currentUser)
-            const updatedUser = {
-                ...userData,
-                password: newPassword
+        try {
+            const result = await changePassword(currentPassword, newPassword)
+            
+            if (result.success) {
+                alert('비밀번호가 성공적으로 변경되었습니다.')
+                setShowChangePasswordModal(false)
+                setCurrentPassword('')
+                setNewPassword('')
+                setConfirmPassword('')
+            } else {
+                alert(result.error || '비밀번호 변경에 실패했습니다.')
             }
-            
-            // currentUser 업데이트
-            localStorage.setItem('currentUser', JSON.stringify(updatedUser))
-            
-            // users 배열에서도 해당 사용자의 비밀번호 업데이트
-            const existingUsers = JSON.parse(localStorage.getItem('users') || '[]')
-            const updatedUsers = existingUsers.map((existingUser: any) => {
-                if (existingUser.email === userData.email) {
-                    return {
-                        ...existingUser,
-                        password: newPassword
-                    }
-                }
-                return existingUser
-            })
-            localStorage.setItem('users', JSON.stringify(updatedUsers))
-            
-            // 상태 업데이트
-            setUser(updatedUser)
-            
-            alert('비밀번호가 성공적으로 변경되었습니다.')
-            setShowChangePasswordModal(false)
-            setCurrentPassword('')
-            setNewPassword('')
-            setConfirmPassword('')
+        } catch (error) {
+            console.error('비밀번호 변경 중 오류:', error)
+            alert('비밀번호 변경 중 오류가 발생했습니다.')
         }
     }
 
@@ -374,7 +361,7 @@ const MyPage: React.FC = () => {
         })
     }
 
-    const handleUserUpdate = (updatedUser: any) => {
+    const handleUserUpdate = (updatedUser: User) => {
         setUser(updatedUser)
     }
 
@@ -386,10 +373,6 @@ const MyPage: React.FC = () => {
         setShowMembershipModal(false)
     }
 
-    const handleNavigation = (path: string) => {
-        console.log('네비게이션 클릭:', path)
-        navigate(path)
-    }
 
     // 주문 상태별 필터링
     const filteredOrders = orders.filter(order => {
@@ -404,21 +387,22 @@ const MyPage: React.FC = () => {
     }
 
     // 주문 취소
-    const handleOrderCancel = (orderId: string) => {
-        if (confirm('정말로 이 주문을 취소하시겠습니까?')) {
-            const updatedOrders = orders.map(order => {
-                if (order.id === orderId) {
-                    return {
-                        ...order,
-                        status: '주문취소' as const,
-                        updated_at: new Date().toISOString()
-                    }
-                }
-                return order
-            })
-            setOrders(updatedOrders)
-            localStorage.setItem('orders', JSON.stringify(updatedOrders))
-            alert('주문이 취소되었습니다.')
+    const handleOrderCancel = async (orderId: string) => {
+        const reason = prompt('주문 취소 사유를 입력해주세요:')
+        if (!reason) return
+
+        try {
+            const success = await cancelOrder(orderId, reason)
+            if (success) {
+                // 주문 목록 새로고침
+                await loadOrders()
+                alert('주문 취소 요청이 접수되었습니다. 관리자 검토 후 처리됩니다.')
+            } else {
+                alert('주문 취소 요청에 실패했습니다.')
+            }
+        } catch (error) {
+            console.error('주문 취소 중 오류 발생:', error)
+            alert('주문 취소 중 오류가 발생했습니다.')
         }
     }
 

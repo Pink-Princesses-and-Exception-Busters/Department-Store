@@ -121,13 +121,13 @@ export const updateOrderStatus = async (orderId: string, status: Order['status']
   }
 }
 
-// 주문 취소
+// 주문 취소 요청 (관리자 검토 필요)
 export const cancelOrder = async (orderId: string, reason: string): Promise<boolean> => {
   try {
     const { error } = await supabase
       .from('orders')
       .update({ 
-        status: '주문취소', 
+        status: '취소요청', 
         cancel_reason: reason,
         updated_at: new Date().toISOString() 
       })

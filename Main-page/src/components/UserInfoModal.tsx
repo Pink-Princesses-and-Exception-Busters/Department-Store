@@ -1,13 +1,5 @@
 import React, { useState, useEffect } from 'react'
-
-interface User {
-    id: string
-    name: string
-    email: string
-    phone: string
-    address: string
-    password?: string
-}
+import { User } from '../context/UserContext'
 
 interface UserInfoModalProps {
     isOpen: boolean
@@ -17,7 +9,12 @@ interface UserInfoModalProps {
 }
 
 const UserInfoModal: React.FC<UserInfoModalProps> = ({ isOpen, onClose, user, onUserUpdate }) => {
-    const [editUserInfo, setEditUserInfo] = useState({
+    const [editUserInfo, setEditUserInfo] = useState<{
+        name: string
+        email: string
+        phone: string
+        address: string
+    }>({
         name: '',
         email: '',
         phone: '',

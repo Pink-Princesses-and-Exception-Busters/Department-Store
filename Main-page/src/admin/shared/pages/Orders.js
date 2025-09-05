@@ -42,7 +42,8 @@ const Orders = () => {
       paymentKey: order.payment_key,
       trackingNumber: order.tracking_number,
       estimatedDelivery: order.estimated_delivery ? new Date(order.estimated_delivery).toISOString().split('T')[0] : null,
-      items: order.items || []
+      items: order.items || [],
+      cancelReason: order.cancel_reason || null // 취소 사유 추가
     };
   };
 
@@ -266,9 +267,13 @@ const Orders = () => {
     const statusMap = {
       '주문접수': { class: 'badge-info', icon: Clock },
       '결제완료': { class: 'badge-success', icon: CheckCircle },
+      '상품준비': { class: 'badge-info', icon: Package },
       '배송중': { class: 'badge-warning', icon: Truck },
       '배송완료': { class: 'badge-success', icon: Package },
-      '취소요청': { class: 'badge-danger', icon: AlertCircle }
+      '주문취소': { class: 'badge-secondary', icon: X },
+      '취소요청': { class: 'badge-danger', icon: AlertCircle },
+      '반품신청': { class: 'badge-warning', icon: AlertCircle },
+      '반품완료': { class: 'badge-secondary', icon: CheckCircle }
     };
     return statusMap[status] || { class: 'badge-info', icon: Clock };
   };
@@ -310,26 +315,83 @@ const Orders = () => {
     <div>
       {/* 상단 통계 */}
       <div className="stats-grid">
+        {/* 전체 버튼 */}
+        <div 
+          className={`stat-card ${selectedStatus === 'all' ? 'stat-card-selected' : ''}`}
+          onClick={() => setSelectedStatus('all')}
+          style={{ 
+            cursor: 'pointer',
+            transform: selectedStatus === 'all' ? 'scale(1.02)' : 'scale(1)',
+            boxShadow: selectedStatus === 'all' ? '0 4px 12px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          <div 
+            className="stat-icon" 
+            style={{ backgroundColor: '#6c757d' }}
+          >
+            <Filter size={20} />
+          </div>
+          <div className="stat-content">
+            <h3>{orders.length}</h3>
+            <p>전체</p>
+          </div>
+          {selectedStatus === 'all' && (
+            <div style={{
+              position: 'absolute',
+              top: '8px',
+              right: '8px',
+              width: '8px',
+              height: '8px',
+              backgroundColor: '#007bff',
+              borderRadius: '50%'
+            }} />
+          )}
+        </div>
+        
         {getStatusStats().map((stat) => {
           const statusInfo = getStatusBadge(stat.value);
           const Icon = statusInfo.icon;
+          const isSelected = selectedStatus === stat.value;
           
           return (
-            <div key={stat.value} className="stat-card">
+            <div 
+              key={stat.value} 
+              className={`stat-card ${isSelected ? 'stat-card-selected' : ''}`}
+              onClick={() => setSelectedStatus(stat.value)}
+              style={{ 
+                cursor: 'pointer',
+                transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+                boxShadow: isSelected ? '0 4px 12px rgba(0,0,0,0.15)' : '0 2px 4px rgba(0,0,0,0.1)',
+                transition: 'all 0.2s ease'
+              }}
+            >
               <div 
                 className="stat-icon" 
                 style={{ 
                   backgroundColor: stat.value === '결제완료' || stat.value === '배송완료' ? '#28a745' :
-                                   stat.value === '배송중' ? '#ffc107' :
-                                   stat.value === '취소요청' ? '#dc3545' : '#007bff'
+                                   stat.value === '배송중' || stat.value === '반품신청' ? '#ffc107' :
+                                   stat.value === '취소요청' ? '#dc3545' :
+                                   stat.value === '주문취소' || stat.value === '반품완료' ? '#6c757d' : '#007bff'
                 }}
               >
-                <Icon size={24} />
+                <Icon size={20} />
               </div>
               <div className="stat-content">
                 <h3>{stat.count}</h3>
                 <p>{stat.label}</p>
               </div>
+              {isSelected && (
+                <div style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: '#007bff',
+                  borderRadius: '50%'
+                }} />
+              )}
             </div>
           );
         })}
@@ -585,6 +647,23 @@ const Orders = () => {
                   </label>
                   <p style={{ margin: 0 }}>{selectedOrder.paymentMethod}</p>
                 </div>
+                {selectedOrder.status === '취소요청' && selectedOrder.cancelReason && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#dc3545' }}>
+                      취소 사유
+                    </label>
+                    <p style={{ 
+                      margin: 0, 
+                      padding: '0.75rem', 
+                      backgroundColor: '#fff5f5', 
+                      border: '1px solid #fed7d7', 
+                      borderRadius: '4px',
+                      color: '#c53030'
+                    }}>
+                      {selectedOrder.cancelReason}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -698,6 +777,34 @@ const Orders = () => {
                   <Truck size={16} />
                   배송 처리
                 </button>
+              )}
+              {selectedOrder.status === '취소요청' && (
+                <>
+                  <button 
+                    className="btn btn-success"
+                    onClick={() => {
+                      if (window.confirm('주문 취소를 승인하시겠습니까?')) {
+                        handleUpdateOrderStatus(selectedOrder.id, '주문취소');
+                        setShowDetailModal(false);
+                      }
+                    }}
+                  >
+                    <CheckCircle size={16} />
+                    취소 승인
+                  </button>
+                  <button 
+                    className="btn btn-danger"
+                    onClick={() => {
+                      if (window.confirm('주문 취소를 거부하시겠습니까? 주문이 결제완료 상태로 돌아갑니다.')) {
+                        handleUpdateOrderStatus(selectedOrder.id, '결제완료');
+                        setShowDetailModal(false);
+                      }
+                    }}
+                  >
+                    <X size={16} />
+                    취소 거부
+                  </button>
+                </>
               )}
               <button 
                 className="btn" 

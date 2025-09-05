@@ -314,3 +314,81 @@ export const updatePasswordWithTemp = async (userId: string, tempPassword: strin
     return { success: false, error: '비밀번호 업데이트 중 오류가 발생했습니다.' }
   }
 }
+
+// 현재 비밀번호 검증
+export const verifyCurrentPassword = async (currentPassword: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // Supabase Auth를 사용한 현재 비밀번호 검증
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user || !user.email) {
+      return { success: false, error: '사용자 정보를 찾을 수 없습니다.' }
+    }
+
+    // 현재 비밀번호로 재인증 시도
+    const { error } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword
+    })
+
+    if (error) {
+      return { success: false, error: '현재 비밀번호가 올바르지 않습니다.' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('Password verification error:', error)
+    return { success: false, error: '비밀번호 검증 중 오류가 발생했습니다.' }
+  }
+}
+
+// 비밀번호 변경
+export const changePassword = async (currentPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    // 1. 현재 비밀번호 검증
+    const verifyResult = await verifyCurrentPassword(currentPassword)
+    if (!verifyResult.success) {
+      return verifyResult
+    }
+
+    // 2. 새 비밀번호로 업데이트
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword
+    })
+
+    if (error) {
+      return { success: false, error: '비밀번호 변경 중 오류가 발생했습니다.' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('Change password error:', error)
+    return { success: false, error: '비밀번호 변경 중 오류가 발생했습니다.' }
+  }
+}
+
+// 메뉴 접근을 위한 비밀번호 검증 (보안 메뉴용)
+export const verifyPasswordForAccess = async (password: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user || !user.email) {
+      return { success: false, error: '사용자 정보를 찾을 수 없습니다.' }
+    }
+
+    // 입력한 비밀번호로 재인증 시도
+    const { error } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: password
+    })
+
+    if (error) {
+      return { success: false, error: '비밀번호가 올바르지 않습니다.' }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error('Password verification error:', error)
+    return { success: false, error: '비밀번호 검증 중 오류가 발생했습니다.' }
+  }
+}

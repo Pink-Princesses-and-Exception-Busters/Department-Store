@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { getCurrentUser } from '../services/userService'
 
-interface User {
+export interface User {
   id: string
   name: string
   email: string

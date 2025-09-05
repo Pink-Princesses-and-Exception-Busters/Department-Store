@@ -54,9 +54,9 @@ const OrderTracking: React.FC = () => {
             if (success) {
                 // 주문 목록 새로고침
                 loadOrders()
-                alert('주문이 취소되었습니다.')
+                alert('주문 취소 요청이 접수되었습니다. 관리자 검토 후 처리됩니다.')
             } else {
-                alert('주문 취소에 실패했습니다.')
+                alert('주문 취소 요청에 실패했습니다.')
             }
         } catch (error) {
             console.error('주문 취소 중 오류 발생:', error)
