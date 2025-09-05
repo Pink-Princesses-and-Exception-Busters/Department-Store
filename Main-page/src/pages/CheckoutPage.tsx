@@ -3,13 +3,16 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { FiChevronDown, FiChevronUp } from 'react-icons/fi'
 import { useCartContext } from '../context/CartContext'
 import { useCouponContext } from '../context/CouponContext'
+import { useUser } from '../context/UserContext'
 import { tossPaymentsService, PaymentData } from '../services/tossPayments'
+import { createOrder, Order, OrderItem } from '../services/orderService'
 
 const CheckoutPage: React.FC = () => {
     const location = useLocation()
     const navigate = useNavigate()
     const { cartItems, selectedItems, getSelectedTotalPrice, formatPrice } = useCartContext()
     const { selectedCoupon, selectCoupon, useCoupon, getAvailableCoupons, calculateDiscount, clearSelectedCoupon } = useCouponContext()
+    const { currentUser } = useUser()
 
     const [customerInfo, setCustomerInfo] = useState({
         name: '',
@@ -20,20 +23,22 @@ const CheckoutPage: React.FC = () => {
 
     // 로그인된 사용자 정보 불러오기
     useEffect(() => {
-        const currentUser = localStorage.getItem('currentUser')
+        console.log('UserContext에서 가져온 currentUser:', currentUser)
+        
         if (currentUser) {
-            const user = JSON.parse(currentUser)
-            console.log('로그인된 사용자 정보:', user)
+            console.log('사용자 정보:', currentUser)
+            console.log('사용자 ID:', currentUser.id)
+            console.log('사용자 이메일:', currentUser.email)
             setCustomerInfo({
-                name: user.name || '',
-                phone: user.phone || '',
-                email: user.email || '',
-                address: user.address || ''
+                name: currentUser.name || '',
+                phone: currentUser.phone || '',
+                email: currentUser.email || '',
+                address: currentUser.address || ''
             })
         } else {
             console.log('로그인된 사용자가 없습니다.')
         }
-    }, [])
+    }, [currentUser])
 
     const [paymentMethod, setPaymentMethod] = useState('card')
     const [agreeTerms, setAgreeTerms] = useState(false)
@@ -65,9 +70,8 @@ const CheckoutPage: React.FC = () => {
         totalPrice = getSelectedTotalPrice()
     }
 
-    // 사용자 등급 확인
-    const currentUser = localStorage.getItem('currentUser')
-    const user = currentUser ? JSON.parse(currentUser) : null
+    // 사용자 등급 확인 (useUser 컨텍스트 사용)
+    const user = currentUser
     
     // 배송비 계산 (FAMILY 등급은 3,000원, SILVER 이상은 무료)
     const shippingFee = user && user.grade === 'FAMILY' ? 3000 : 0
@@ -113,6 +117,75 @@ const CheckoutPage: React.FC = () => {
         }))
     }
 
+    // 주문 데이터 생성 함수 (로그인 사용자 + 비회원 지원)
+    const createOrderData = async (orderId: string): Promise<Omit<Order, 'id' | 'created_at' | 'updated_at'> | null> => {
+        try {
+            const { supabase } = await import('../services/supabase')
+            
+            let userId: string
+            
+            console.log('주문 생성 - 사용자 정보 (useUser):', currentUser)
+            
+            if (currentUser && currentUser.id) {
+                // 로그인 사용자: 기존 ID 사용 (users 테이블에 이미 존재한다고 가정)
+                userId = currentUser.id
+                console.log('로그인 사용자 주문 - 기존 ID 사용:', userId)
+            } else {
+                // 비회원: 원래 PaymentSuccessPage 방식 사용 (localStorage 기반)
+                console.log('비회원 주문 - localStorage에서 임시 ID 생성')
+                
+                // 임시로 기존 사용자 중 하나를 사용 (실제로는 비회원 테이블을 별도로 만들거나 다른 방식 필요)
+                const existingUsers = await supabase
+                    .from('users')
+                    .select('id')
+                    .limit(1)
+                    .single()
+                
+                if (existingUsers.data) {
+                    userId = existingUsers.data.id
+                    console.log('비회원 주문 - 임시로 기존 사용자 ID 사용:', userId)
+                } else {
+                    console.error('사용 가능한 사용자 ID를 찾을 수 없습니다.')
+                    return null
+                }
+            }
+
+            // 주문 아이템 생성
+            const orderItemsData: OrderItem[] = orderItems.map((item) => ({
+                product_id: item.product.id,
+                name: item.product.name,
+                price: item.product.price,
+                quantity: item.quantity,
+                image: item.product.image,
+                brand: item.product.brand || '브랜드 정보 없음',
+                size: item.selectedSize || 'FREE',
+                color: item.selectedColor || '블랙'
+            }))
+
+            // 배송 예상일 계산 (3-5일 후)
+            const estimatedDelivery = new Date()
+            estimatedDelivery.setDate(estimatedDelivery.getDate() + Math.floor(Math.random() * 3) + 3)
+
+            return {
+                user_id: userId,
+                order_date: new Date().toISOString(),
+                status: '주문접수', // 초기 상태
+                total_amount: finalPrice,
+                payment_method: paymentMethod === 'card' ? '신용카드' : paymentMethod === 'kakao' ? '카카오페이' : '무통장입금',
+                payment_key: '', // 결제 성공 후 업데이트
+                items: orderItemsData,
+                shipping_address: customerInfo.address,
+                recipient_name: customerInfo.name,
+                recipient_phone: customerInfo.phone,
+                tracking_number: `TN${Date.now()}`,
+                estimated_delivery: estimatedDelivery.toISOString()
+            }
+        } catch (error) {
+            console.error('주문 데이터 생성 중 오류:', error)
+            return null
+        }
+    }
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
 
@@ -134,8 +207,28 @@ const CheckoutPage: React.FC = () => {
                 ? orderItems[0].product.name 
                 : `${orderItems[0].product.name} 외 ${orderItems.length - 1}건`
 
-            // 쿠폰 사용은 결제 성공 후 PaymentSuccessPage에서 처리됨
-            // 여기서는 선택된 쿠폰 정보만 유지
+            // 1. 먼저 주문을 데이터베이스에 생성 (상태: '주문접수')
+            const orderData = await createOrderData(orderId)
+            if (!orderData) {
+                alert('주문 데이터 생성에 실패했습니다. 다시 시도해주세요.')
+                return
+            }
+            
+            const createdOrder = await createOrder(orderData)
+            if (!createdOrder) {
+                alert('주문 생성에 실패했습니다. 다시 시도해주세요.')
+                return
+            }
+
+            console.log('주문이 생성되었습니다:', createdOrder)
+
+            // 2. 주문 정보를 세션 스토리지에 임시 저장 (결제 성공 페이지에서 사용)
+            sessionStorage.setItem('currentOrder', JSON.stringify({
+                ...createdOrder,
+                selectedCoupon,
+                discountAmount,
+                originalAmount: totalPrice
+            }))
 
             const paymentData: PaymentData = {
                 amount: finalPrice, // 할인된 최종 금액으로 결제
@@ -171,15 +264,50 @@ const CheckoutPage: React.FC = () => {
     }
 
     // 개발자용 결제 완료 테스트 함수
-    const handleTestPaymentSuccess = () => {
-        const orderId = tossPaymentsService.generateOrderId()
-        const paymentKey = `test_payment_${Date.now()}`
-        
-        // 쿠폰 사용은 결제 성공 후 PaymentSuccessPage에서 처리됨
-        // 여기서는 선택된 쿠폰 정보만 유지
-        
-        // 결제 성공 페이지로 이동 (테스트용 파라미터와 함께)
-        navigate(`/payment/success?paymentKey=${paymentKey}&orderId=${orderId}&amount=${finalPrice}`)
+    const handleTestPaymentSuccess = async () => {
+        if (!customerInfo.name || !customerInfo.phone || !customerInfo.address) {
+            alert('필수 정보를 모두 입력해주세요.')
+            return
+        }
+
+        if (!agreeTerms) {
+            alert('구매 약관에 동의해주세요.')
+            return
+        }
+
+        try {
+            const orderId = tossPaymentsService.generateOrderId()
+            const paymentKey = `test_payment_${Date.now()}`
+            
+            // 1. 테스트용 주문 생성
+            const orderData = await createOrderData(orderId)
+            if (!orderData) {
+                alert('주문 데이터 생성에 실패했습니다.')
+                return
+            }
+            
+            const createdOrder = await createOrder(orderData)
+            if (!createdOrder) {
+                alert('주문 생성에 실패했습니다.')
+                return
+            }
+
+            console.log('테스트 주문이 생성되었습니다:', createdOrder)
+
+            // 2. 주문 정보를 세션 스토리지에 저장
+            sessionStorage.setItem('currentOrder', JSON.stringify({
+                ...createdOrder,
+                selectedCoupon,
+                discountAmount,
+                originalAmount: totalPrice
+            }))
+
+            // 3. 결제 성공 페이지로 이동 (테스트용 파라미터와 함께)
+            navigate(`/payment/success?paymentKey=${paymentKey}&orderId=${orderId}&amount=${finalPrice}`)
+        } catch (error) {
+            console.error('테스트 주문 생성 실패:', error)
+            alert('테스트 주문 생성에 실패했습니다.')
+        }
     }
 
     return (
