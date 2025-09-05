@@ -51,6 +51,7 @@ const Orders = () => {
   const fetchOrders = async () => {
     try {
       setLoading(true);
+      console.log('📊 주문 데이터 조회 시작')
       let query = supabase
         .from('orders')
         .select('*')
@@ -58,31 +59,82 @@ const Orders = () => {
 
       // 사용자 역할에 따른 필터링
       if (user?.user_metadata?.role === 'merchant') {
+        console.log('🏪 입점사 관리자 모드')
         // 입점사 관리자: 해당 브랜드의 주문만 조회
         // items 배열에서 특정 브랜드의 상품이 포함된 주문을 찾아야 함
         // 일단 모든 주문을 가져온 후 클라이언트에서 필터링
         const { data, error } = await query;
         
         if (error) {
-          console.error('주문 데이터 조회 오류:', error);
+          console.error('❌ 주문 데이터 조회 오류:', error);
           return;
         }
 
-        // 입점사 관리자의 브랜드명 추출 (실제로는 brand_admins 테이블에서 가져와야 함)
-        const merchantBrand = user?.user_metadata?.brand || '브랜드명';
+        console.log('📦 조회된 전체 주문 수:', data?.length || 0);
+
+        // 입점사 관리자의 브랜드명 추출 - brand_admins 테이블에서 조회
+        let merchantBrand = user?.user_metadata?.brand;
+        
+        if (!merchantBrand) {
+          // user_metadata에 브랜드 정보가 없으면 brand_admins 테이블에서 조회
+          const { data: brandAdmin, error: brandError } = await supabase
+            .from('brand_admins')
+            .select('name')
+            .eq('email', user?.email)
+            .single();
+          
+          if (brandError) {
+            console.error('❌ brand_admins 조회 오류:', brandError);
+          }
+          
+          merchantBrand = brandAdmin?.name || 'Unknown';
+        }
+        
+        console.log('🏷️ 입점사 브랜드:', merchantBrand);
         
         // 해당 브랜드의 상품이 포함된 주문만 필터링
         const filteredOrders = data.filter(order => {
-          if (!order.items || !Array.isArray(order.items)) return false;
-          return order.items.some(item => item.brand === merchantBrand);
+          if (!order.items || !Array.isArray(order.items)) {
+            console.log('❌ 주문에 items 데이터 없음:', order.id);
+            return false;
+          }
+          
+          // 각 주문의 브랜드 정보 상세 로그
+          console.log('🔍 주문 검사:', order.id);
+          console.log('📦 주문 상품들:', order.items.map(item => ({
+            name: item.name,
+            brand: item.brand,
+            brandType: typeof item.brand
+          })));
+          console.log('🎯 찾는 브랜드:', merchantBrand, typeof merchantBrand);
+          
+          const hasBrandItem = order.items.some(item => {
+            // "Unknown" 브랜드는 제외하고 정확한 브랜드 매칭만
+            const match = item.brand === merchantBrand && merchantBrand !== 'Unknown';
+            console.log(`   ${item.name}: "${item.brand}" === "${merchantBrand}" (브랜드가 Unknown이 아님: ${merchantBrand !== 'Unknown'}) ? ${match}`);
+            return match;
+          });
+          
+          console.log(`${hasBrandItem ? '✅' : '❌'} 주문 ${order.id} 매칭 결과: ${hasBrandItem}`);
+          return hasBrandItem;
         });
+
+        console.log('🔍 필터링된 주문 수:', filteredOrders.length);
 
         // 사용자 이메일 정보를 별도로 조회
         const userIds = [...new Set(filteredOrders.map(order => order.user_id))];
-        const { data: usersData } = await supabase
+        console.log('👥 사용자 ID 목록:', userIds);
+        
+        const { data: usersData, error: usersError } = await supabase
           .from('users')
           .select('id, email, name')
           .in('id', userIds);
+
+        if (usersError) {
+          console.error('❌ 사용자 데이터 조회 오류:', usersError);
+        }
+
+        console.log('👤 조회된 사용자 수:', usersData?.length || 0);
 
         const usersMap = {};
         if (usersData) {
@@ -96,6 +148,7 @@ const Orders = () => {
           customerEmail: usersMap[order.user_id]?.email || '이메일 정보 없음'
         }));
         
+        console.log('✅ 최종 주문 목록:', transformedOrders.length, '건');
         setOrders(transformedOrders);
       } else {
         // HQ 관리자: 모든 주문 조회

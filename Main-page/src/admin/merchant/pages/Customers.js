@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -8,9 +8,11 @@ import {
   User,
   Calendar,
   ShoppingBag,
-  X
+  X,
+  Loader
 } from 'lucide-react';
 import Modal from '../../shared/components/Modal';
+import { getBrandCustomers, getCurrentBrandName } from '../../../services/brandCustomerService';
 
 const Customers = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -21,66 +23,43 @@ const Customers = () => {
     subject: '',
     message: ''
   });
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [brandName, setBrandName] = useState('');
 
-  // 샘플 고객 데이터
-  const customers = [
-    {
-      id: 1,
-      name: '김철수',
-      email: 'kim@email.com',
-      phone: '010-1234-5678',
-      joinDate: '2023-12-15',
-      totalOrders: 12,
-      totalSpent: 450000,
-      lastOrder: '2024-01-15',
-      status: '활성'
-    },
-    {
-      id: 2,
-      name: '이영희',
-      email: 'lee@email.com',
-      phone: '010-2345-6789',
-      joinDate: '2023-11-20',
-      totalOrders: 8,
-      totalSpent: 320000,
-      lastOrder: '2024-01-14',
-      status: '활성'
-    },
-    {
-      id: 3,
-      name: '박민수',
-      email: 'park@email.com',
-      phone: '010-3456-7890',
-      joinDate: '2023-10-10',
-      totalOrders: 15,
-      totalSpent: 680000,
-      lastOrder: '2024-01-13',
-      status: '활성'
-    },
-    {
-      id: 4,
-      name: '정수진',
-      email: 'jung@email.com',
-      phone: '010-4567-8901',
-      joinDate: '2023-09-05',
-      totalOrders: 3,
-      totalSpent: 150000,
-      lastOrder: '2023-12-20',
-      status: '비활성'
-    },
-    {
-      id: 5,
-      name: '최동현',
-      email: 'choi@email.com',
-      phone: '010-5678-9012',
-      joinDate: '2024-01-01',
-      totalOrders: 2,
-      totalSpent: 85000,
-      lastOrder: '2024-01-10',
-      status: '활성'
-    }
-  ];
+  // 브랜드 고객 데이터 로드
+  useEffect(() => {
+    const loadBrandCustomers = async () => {
+      try {
+        setLoading(true);
+        
+        // 현재 브랜드명 조회
+        const currentBrand = await getCurrentBrandName();
+        if (!currentBrand) {
+          console.error('브랜드 정보를 찾을 수 없습니다.');
+          return;
+        }
+        
+        setBrandName(currentBrand);
+        console.log('🏷️ 현재 브랜드:', currentBrand);
+        
+        // 브랜드별 고객 데이터 조회
+        const brandCustomers = await getBrandCustomers(currentBrand);
+        setCustomers(brandCustomers);
+        
+        console.log('👥 로드된 고객 수:', brandCustomers.length);
+        
+      } catch (error) {
+        console.error('고객 데이터 로드 오류:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
 
+    loadBrandCustomers();
+  }, []);
+
+  // 필터링된 고객 목록
   const filteredCustomers = customers.filter(customer =>
     customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     customer.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -154,8 +133,37 @@ const Customers = () => {
     }
   ];
 
+  // 로딩 중일 때 표시
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '50vh',
+        flexDirection: 'column',
+        gap: '1rem'
+      }}>
+        <Loader size={48} style={{ animation: 'spin 1s linear infinite' }} />
+        <p style={{ color: '#666' }}>브랜드 고객 데이터를 불러오는 중...</p>
+      </div>
+    );
+  }
+
   return (
     <div>
+      {/* 브랜드 정보 표시 */}
+      {brandName && (
+        <div className="card" style={{ marginBottom: '1.5rem', background: '#f8f9fa' }}>
+          <h2 style={{ margin: 0, color: '#007bff' }}>
+            🏷️ {brandName} 브랜드 고객 관리
+          </h2>
+          <p style={{ margin: '0.5rem 0 0 0', color: '#666' }}>
+            {brandName} 상품을 구매한 고객들의 정보입니다.
+          </p>
+        </div>
+      )}
+
       {/* 통계 카드 */}
       <div className="stats-grid">
         {stats.map((stat, index) => {
