@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { FiMessageSquare, FiPlus, FiSearch, FiCalendar, FiFileText, FiShoppingBag, FiX } from 'react-icons/fi'
+import { useUser } from '../context/UserContext'
+import { getUserInquiries } from '../services/inquiryService'
+import { getUserOrders } from '../services/orderService'
 
 interface Inquiry {
   id: string
@@ -30,6 +33,7 @@ interface Order {
 
 const InquiryHistoryPage: React.FC = () => {
   const navigate = useNavigate()
+  const { currentUser } = useUser()
   const [inquiries, setInquiries] = useState<Inquiry[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,33 +46,48 @@ const InquiryHistoryPage: React.FC = () => {
  
 
   useEffect(() => {
-    // 로컬스토리지에서 문의 내역과 주문 내역 가져오기
-    const savedInquiries = localStorage.getItem('inquiries')
-    console.log('저장된 문의 내역:', savedInquiries)
-    
-    if (savedInquiries) {
-      const parsedInquiries = JSON.parse(savedInquiries)
-      console.log('파싱된 문의 내역:', parsedInquiries)
-      setInquiries(parsedInquiries)
-    } else {
-      console.log('문의 내역이 localStorage에 없습니다.')
-    }
-
-    const savedOrders = localStorage.getItem('orders')
-    if (savedOrders) {
-      const allOrders = JSON.parse(savedOrders)
-      const currentUser = localStorage.getItem('currentUser')
-      if (currentUser) {
-        const user = JSON.parse(currentUser)
-        const userOrders = allOrders.filter((order: Order) => 
-          order.user_id === user.id || order.user_id === user.email || order.user_id === user.name
-        )
-        setOrders(userOrders)
+    // 데이터베이스에서 문의 내역과 주문 내역 가져오기
+    const loadData = async () => {
+      if (currentUser?.id) {
+        try {
+          setLoading(true)
+          console.log('📋 문의 내역 페이지: 데이터 로드 시작')
+          
+          // 문의 내역 로드
+          const userInquiries = await getUserInquiries(currentUser.id)
+          console.log(`✅ 문의 내역 로드 완료: ${userInquiries.length}건`)
+          
+          // 데이터베이스 형식을 UI 형식으로 변환
+          const formattedInquiries = userInquiries.map(inquiry => ({
+            id: inquiry.id || '',
+            inquiryType: inquiry.inquiry_type,
+            title: inquiry.title,
+            inquiryDate: inquiry.created_at || '',
+            replyStatus: (inquiry.status === '답변완료' ? '답변완료' : '답변대기') as '답변대기' | '답변완료',
+            replyDate: inquiry.reply_date || undefined,
+            content: inquiry.content,
+            replyContent: inquiry.reply_content || undefined
+          }))
+          
+          setInquiries(formattedInquiries)
+          
+          // 주문 내역 로드
+          const userOrders = await getUserOrders(currentUser.id)
+          console.log(`✅ 주문 내역 로드 완료: ${userOrders.length}건`)
+          setOrders(userOrders)
+          
+        } catch (error) {
+          console.error('데이터 로드 실패:', error)
+        } finally {
+          setLoading(false)
+        }
+      } else {
+        setLoading(false)
       }
     }
     
-    setLoading(false)
-  }, [])
+    loadData()
+  }, [currentUser?.id])
 
   const inquiryTypes = [
     '회원',

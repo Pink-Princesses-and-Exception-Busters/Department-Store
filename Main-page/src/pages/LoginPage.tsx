@@ -2,11 +2,13 @@ import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { login } from '../services/userService'
 import { useUser } from '../context/UserContext'
+import { useCartContext } from '../context/CartContext'
 import { authLogger } from '../utils/logger'
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate()
   const { setCurrentUser } = useUser()
+  const { syncCartOnLogin } = useCartContext()
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -35,6 +37,10 @@ const LoginPage: React.FC = () => {
       if (result.success && result.user) {
         // UserContext 상태 업데이트 - 이게 핵심!
         setCurrentUser(result.user)
+        
+        // 장바구니 동기화 (비회원 → 회원 전환)
+        await syncCartOnLogin()
+        
         alert(`${result.user.name}님, 환영합니다!`)
         navigate('/')
       } else {

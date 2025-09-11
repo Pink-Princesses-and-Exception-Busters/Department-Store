@@ -17,7 +17,7 @@ const Header: React.FC = () => {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
   
-  const { getCartItemCount } = useCartContext()
+  const { getCartItemCount, syncCartOnLogout } = useCartContext()
   const location = useLocation()
   const { currentUser, setCurrentUser } = useUser()
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -95,6 +95,9 @@ const Header: React.FC = () => {
   // 로그아웃 함수
   const handleLogout = async () => {
     try {
+      // 장바구니 동기화 (회원 → 비회원 전환)
+      await syncCartOnLogout()
+      
       await logout()
       setCurrentUser(null)
       alert('로그아웃되었습니다.')

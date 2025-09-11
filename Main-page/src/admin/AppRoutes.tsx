@@ -32,6 +32,7 @@ import StatisticsMerchant from './merchant/pages/StatisticsMerchant';
 import Products from './merchant/pages/Products';
 import Customers from './merchant/pages/Customers';
 import DummyShopProducts from './merchant/pages/DummyShopProducts';
+import CustomerServiceMerchant from './merchant/pages/CustomerService';
 
 const AppRoutes: React.FC = () => {
   const { user } = useAuth();
@@ -75,6 +76,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/products" element={<Products />} />
       <Route path="/customers" element={<Customers />} />
       <Route path="/dummy-products" element={<DummyShopProducts />} />
+      <Route path="/customer-service" element={<CustomerServiceMerchant />} />
       
       {/* 공통 페이지 */}
       <Route path="/profile" element={<ProfileMerchant />} />

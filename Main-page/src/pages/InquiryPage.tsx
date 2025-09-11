@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { FiMessageSquare, FiFileText, FiUpload, FiX, FiSearch, FiHeart, FiHash, FiShoppingBag } from 'react-icons/fi'
+import { useUser } from '../context/UserContext'
+import { getUserOrders } from '../services/orderService'
+import { createInquiry } from '../services/inquiryService'
 
 interface InquiryForm {
   inquiryType: string
@@ -35,6 +38,7 @@ interface Order {
 
 const InquiryPage: React.FC = () => {
   const navigate = useNavigate()
+  const { currentUser } = useUser()
   const [formData, setFormData] = useState<InquiryForm>({
     inquiryType: '',
     productSearch: '',
@@ -58,20 +62,22 @@ const InquiryPage: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState<any>(null)
 
   useEffect(() => {
-    // 주문 내역 가져오기
-    const savedOrders = localStorage.getItem('orders')
-    if (savedOrders) {
-      const allOrders = JSON.parse(savedOrders)
-      const currentUser = localStorage.getItem('currentUser')
-      if (currentUser) {
-        const user = JSON.parse(currentUser)
-        const userOrders = allOrders.filter((order: Order) => 
-          order.user_id === user.id || order.user_id === user.email || order.user_id === user.name
-        )
-        setOrders(userOrders)
+    // 데이터베이스에서 주문 내역 가져오기
+    const loadOrders = async () => {
+      if (currentUser?.id) {
+        try {
+          console.log('📦 문의페이지: 주문 데이터 로드 시작')
+          const userOrders = await getUserOrders(currentUser.id)
+          console.log(`✅ 문의페이지: ${userOrders.length}개 주문 로드 완료`)
+          setOrders(userOrders)
+        } catch (error) {
+          console.error('주문 데이터 로드 실패:', error)
+        }
       }
     }
-  }, [])
+    
+    loadOrders()
+  }, [currentUser?.id])
 
   const inquiryTypes = [
     '회원',
@@ -112,7 +118,7 @@ const InquiryPage: React.FC = () => {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!formData.inquiryType) {
@@ -132,33 +138,63 @@ const InquiryPage: React.FC = () => {
       return
     }
 
-    // 문의 데이터 생성
-    const newInquiry = {
-      id: Date.now().toString(), // 간단한 ID 생성
-      inquiryType: formData.inquiryType,
-      title: formData.title,
-      content: formData.content,
-      inquiryDate: new Date().toISOString(),
-      replyStatus: '답변대기' as const,
-      email: formData.email,
-      phone: formData.phone1 + '-' + formData.phone2 + '-' + formData.phone3,
-      smsNotification: formData.smsNotification,
-      imageFile: formData.imageFile
-    }
+    try {
+      console.log('📝 문의 제출 시작...')
+      
+      // 이메일 주소 조합
+      const fullEmail = formData.emailDomain === '직접입력' 
+        ? `${formData.email}@${formData.customEmailDomain}`
+        : `${formData.email}@${formData.emailDomain}`
 
-    // localStorage에서 기존 문의 내역 가져오기
-    const existingInquiries = localStorage.getItem('inquiries')
-    const inquiries = existingInquiries ? JSON.parse(existingInquiries) : []
-    
-    // 새 문의 추가
-    inquiries.push(newInquiry)
-    
-    // localStorage에 저장
-    localStorage.setItem('inquiries', JSON.stringify(inquiries))
-    
-    console.log('문의 제출:', newInquiry)
-    alert('문의가 성공적으로 접수되었습니다.')
-    navigate('/inquiry-history')
+      // 전화번호 조합
+      const phone = formData.phone2 && formData.phone3 
+        ? `${formData.phone1}-${formData.phone2}-${formData.phone3}`
+        : ''
+
+      // 선택된 상품의 브랜드 정보 추출
+      let productBrand = null
+      let productId = null
+      let productName = null
+      
+      if (selectedProduct) {
+        productBrand = selectedProduct.brand || '알 수 없는 브랜드'
+        productId = selectedProduct.id
+        productName = selectedProduct.name
+        console.log('📦 선택된 상품 정보:', { productBrand, productId, productName })
+      }
+
+      // 문의 데이터 생성
+      const inquiryData = {
+        user_id: currentUser?.id || null,
+        inquiry_type: formData.inquiryType,
+        category: formData.inquiryType, // category는 inquiry_type과 동일하게 설정
+        title: formData.title,
+        content: formData.content,
+        email: fullEmail,
+        phone: phone,
+        sms_notification: formData.smsNotification,
+        product_id: productId,
+        product_name: productName,
+        product_brand: productBrand,
+        // TODO: 이미지 업로드 구현 시 image_url 추가
+        image_url: null
+      }
+
+      // 데이터베이스에 문의 저장
+      const savedInquiry = await createInquiry(inquiryData)
+      
+      if (savedInquiry) {
+        console.log('✅ 문의 제출 성공:', savedInquiry)
+        alert('문의가 성공적으로 접수되었습니다.')
+        navigate('/inquiry-history')
+      } else {
+        console.error('❌ 문의 제출 실패')
+        alert('문의 제출 중 오류가 발생했습니다. 다시 시도해주세요.')
+      }
+    } catch (error) {
+      console.error('문의 제출 중 예외 발생:', error)
+      alert('문의 제출 중 오류가 발생했습니다. 다시 시도해주세요.')
+    }
   }
 
   const removeFile = () => {

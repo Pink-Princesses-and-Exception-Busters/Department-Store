@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { FiArrowLeft, FiMessageSquare, FiFileText, FiX, FiDownload } from 'react-icons/fi'
+import { getInquiryById } from '../services/inquiryService'
+import { useUser } from '../context/UserContext'
 
 interface Inquiry {
   id: string
@@ -8,40 +10,77 @@ interface Inquiry {
   title: string
   content: string
   inquiryDate: string
-  replyStatus: '답변대기' | '답변완료'
+  replyStatus: '답변대기' | '답변완료' | '처리중' | '종료'
   email: string
   phone: string
   smsNotification: boolean
-  imageFile: File | null
+  imageFile?: File | null
   productSearch?: string
+  replyContent?: string
+  replyDate?: string
+  productName?: string
+  productBrand?: string
+  priority?: string
 }
 
 const InquiryDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { currentUser } = useUser()
   const [inquiry, setInquiry] = useState<Inquiry | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (id) {
-      // localStorage에서 문의 내역 가져오기
-      const savedInquiries = localStorage.getItem('inquiries')
-      if (savedInquiries) {
-        const inquiries = JSON.parse(savedInquiries)
-        const foundInquiry = inquiries.find((inq: Inquiry) => inq.id === id)
-        if (foundInquiry) {
-          setInquiry(foundInquiry)
-        } else {
-          alert('문의를 찾을 수 없습니다.')
+    const loadInquiry = async () => {
+      if (id && currentUser?.id) {
+        try {
+          setLoading(true)
+          console.log('📋 문의 상세보기: 데이터 로드 시작', id)
+          
+          // 데이터베이스에서 문의 상세 정보 가져오기
+          const inquiryData = await getInquiryById(id)
+          
+          if (inquiryData) {
+            // 데이터베이스 형식을 UI 형식으로 변환
+            const formattedInquiry: Inquiry = {
+              id: inquiryData.id || '',
+              inquiryType: inquiryData.inquiry_type,
+              title: inquiryData.title,
+              content: inquiryData.content,
+              inquiryDate: inquiryData.created_at || '',
+              replyStatus: inquiryData.status as '답변대기' | '답변완료' | '처리중' | '종료',
+              email: inquiryData.email,
+              phone: inquiryData.phone || '',
+              smsNotification: inquiryData.sms_notification || false,
+              replyContent: inquiryData.reply_content,
+              replyDate: inquiryData.reply_date,
+              productName: inquiryData.product_name,
+              productBrand: inquiryData.product_brand,
+              priority: inquiryData.priority
+            }
+            
+            setInquiry(formattedInquiry)
+            console.log('✅ 문의 상세보기: 데이터 로드 완료')
+          } else {
+            console.log('❌ 문의를 찾을 수 없음:', id)
+            alert('문의를 찾을 수 없습니다.')
+            navigate('/inquiry-history')
+          }
+        } catch (error) {
+          console.error('문의 상세보기 로드 실패:', error)
+          alert('문의 정보를 불러오는 중 오류가 발생했습니다.')
           navigate('/inquiry-history')
+        } finally {
+          setLoading(false)
         }
-      } else {
-        alert('문의 내역이 없습니다.')
-        navigate('/inquiry-history')
+      } else if (!currentUser) {
+        alert('로그인이 필요합니다.')
+        navigate('/login')
       }
-      setLoading(false)
     }
-  }, [id, navigate])
+
+    loadInquiry()
+  }, [id, currentUser, navigate])
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ko-KR', {
@@ -156,10 +195,30 @@ const InquiryDetailPage: React.FC = () => {
           {/* 문의 내용 */}
           <div className="p-6">
             {/* 문의 상품 정보 */}
-            {inquiry.productSearch && (
+            {(inquiry.productName || inquiry.productBrand || inquiry.productSearch) && (
               <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
                 <h3 className="text-sm font-semibold text-gray-800 mb-2">문의 상품</h3>
-                <p className="text-gray-700">{inquiry.productSearch}</p>
+                <div className="space-y-2">
+                  {inquiry.productBrand && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-600 bg-gray-200 px-2 py-1 rounded">
+                        브랜드
+                      </span>
+                      <span className="text-gray-700">{inquiry.productBrand}</span>
+                    </div>
+                  )}
+                  {inquiry.productName && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-600 bg-gray-200 px-2 py-1 rounded">
+                        상품명
+                      </span>
+                      <span className="text-gray-700">{inquiry.productName}</span>
+                    </div>
+                  )}
+                  {inquiry.productSearch && !inquiry.productName && (
+                    <p className="text-gray-700">{inquiry.productSearch}</p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -212,13 +271,28 @@ const InquiryDetailPage: React.FC = () => {
             {/* 답변 영역 */}
             <div className="border-t border-gray-200 pt-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-3">답변</h3>
-              {inquiry.replyStatus === '답변완료' ? (
-                <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2 mb-2">
+              {inquiry.replyStatus === '답변완료' && inquiry.replyContent ? (
+                <div className="bg-green-50 p-6 rounded-lg border border-green-200">
+                  <div className="flex items-center gap-2 mb-4">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                     <span className="text-sm font-medium text-green-800">답변 완료</span>
+                    {inquiry.replyDate && (
+                      <span className="text-xs text-green-600 ml-2">
+                        ({formatDate(inquiry.replyDate)})
+                      </span>
+                    )}
                   </div>
-                  <p className="text-green-700">답변이 완료되었습니다. 이메일로 답변 내용을 확인해주세요.</p>
+                  <div className="bg-white p-4 rounded-lg border border-green-100">
+                    <p className="text-gray-800 whitespace-pre-wrap">{inquiry.replyContent}</p>
+                  </div>
+                </div>
+              ) : inquiry.replyStatus === '처리중' ? (
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <span className="text-sm font-medium text-blue-800">처리 중</span>
+                  </div>
+                  <p className="text-blue-700">문의하신 내용을 검토하고 있습니다. 빠른 시일 내에 답변 드리겠습니다.</p>
                 </div>
               ) : (
                 <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">

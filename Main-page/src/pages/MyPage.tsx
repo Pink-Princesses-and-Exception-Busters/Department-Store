@@ -5,6 +5,7 @@ import UserInfoModal from '../components/UserInfoModal'
 import { getUserOrders, migrateLocalOrdersToDatabase, Order, cancelOrder } from '../services/orderService'
 import { useUser, User } from '../context/UserContext'
 import { verifyPasswordForAccess, changePassword } from '../services/userService'
+import { getUserInquiries } from '../services/inquiryService'
 
 
 
@@ -49,6 +50,7 @@ const MyPage: React.FC = () => {
         nextGradeRequired: 5000000,
         progressPercentage: 0
     })
+    const [inquiryCount, setInquiryCount] = useState(0)
     
     // 등급별 기준 정의
     const gradeThresholds = {
@@ -204,6 +206,20 @@ const MyPage: React.FC = () => {
         }
     }
 
+    // 문의 개수 로드 함수
+    const loadInquiryCount = async () => {
+        if (!currentUser) return
+
+        try {
+            console.log('📋 1:1문의 개수 로드 시작...')
+            const userInquiries = await getUserInquiries(currentUser.id)
+            setInquiryCount(userInquiries.length)
+            console.log(`✅ 1:1문의 개수 로드 완료: ${userInquiries.length}건`)
+        } catch (error) {
+            console.error('1:1문의 개수 로드 중 오류:', error)
+        }
+    }
+
     useEffect(() => {
         const loadUserData = async () => {
             if (!currentUser) {
@@ -224,6 +240,9 @@ const MyPage: React.FC = () => {
             try {
                 // 주문 데이터 로드
                 await loadOrders()
+
+                // 문의 개수 로드
+                await loadInquiryCount()
             } catch (error) {
                 console.error('주문 데이터를 가져오는 중 오류 발생:', error)
             }
@@ -733,7 +752,7 @@ const MyPage: React.FC = () => {
                                     <div className="grid grid-cols-4 gap-5">
                                         <div className="flex flex-col items-center text-center p-4 bg-gray-50 rounded-md">
                                             <span className="text-sm text-gray-600 mb-2">1:1문의내역</span>
-                                            <span className="text-base font-semibold text-gray-800">0건</span>
+                                            <span className="text-base font-semibold text-gray-800">{inquiryCount}건</span>
                                         </div>
                                         <div className="flex flex-col items-center text-center p-4 bg-gray-50 rounded-md">
                                             <span className="text-sm text-gray-600 mb-2">상품Q&A</span>

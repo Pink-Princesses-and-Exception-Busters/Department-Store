@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -11,6 +11,7 @@ import {
   User
 } from 'lucide-react';
 import Modal from '../../shared/components/Modal';
+import { getAllInquiries, replyToInquiry, updateInquiryStatus } from '../../../services/inquiryService';
 
 const CustomerService = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -19,82 +20,47 @@ const CustomerService = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedInquiry, setSelectedInquiry] = useState(null);
   const [replyText, setReplyText] = useState('');
+  const [inquiries, setInquiries] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const [inquiries, setInquiries] = useState([
-    {
-      id: 1,
-      customerName: '김철수',
-      customerEmail: 'kim@email.com',
-      customerPhone: '010-1234-5678',
-      category: '상품문의',
-      subject: '갤럭시 S24 배송 문의',
-      content: '갤럭시 S24를 주문했는데 배송이 지연되고 있습니다. 언제 도착할 예정인가요?',
-      status: '답변대기',
-      priority: '높음',
-      submittedDate: '2024-01-15 14:30',
-      assignedTo: '미배정',
-      tenant: '삼성전자'
-    },
-    {
-      id: 2,
-      customerName: '이영희',
-      customerEmail: 'lee@email.com',
-      customerPhone: '010-2345-6789',
-      category: '환불요청',
-      subject: 'LG TV 환불 신청',
-      content: 'LG OLED TV를 구매했는데 화면에 문제가 있습니다. 환불을 신청합니다.',
-      status: '처리중',
-      priority: '높음',
-      submittedDate: '2024-01-15 11:20',
-      assignedTo: '김서비스',
-      tenant: 'LG전자',
-      reply: '환불 절차를 안내드리겠습니다. 제품 사진을 첨부해 주시면 더 빠른 처리가 가능합니다.'
-    },
-    {
-      id: 3,
-      customerName: '박민수',
-      customerEmail: 'park@email.com',
-      customerPhone: '010-3456-7890',
-      category: '배송문의',
-      subject: '나이키 신발 배송 상태',
-      content: '나이키 에어맥스를 주문했는데 배송 상태를 확인하고 싶습니다.',
-      status: '답변완료',
-      priority: '보통',
-      submittedDate: '2024-01-14 16:45',
-      assignedTo: '이서비스',
-      tenant: '신세계인터내셔날',
-      reply: '주문하신 상품은 오늘 오후에 배송될 예정입니다. 배송 추적 번호를 문자로 발송드렸습니다.'
-    },
-    {
-      id: 4,
-      customerName: '정수진',
-      customerEmail: 'jung@email.com',
-      customerPhone: '010-4567-8901',
-      category: '상품불만',
-      subject: '의자 품질 문제',
-      content: '구매한 디자인 의자의 다리가 흔들립니다. 교환을 요청합니다.',
-      status: '답변대기',
-      priority: '보통',
-      submittedDate: '2024-01-15 09:15',
-      assignedTo: '미배정',
-      tenant: '가구업체'
-    },
-    {
-      id: 5,
-      customerName: '최동현',
-      customerEmail: 'choi@email.com',
-      customerPhone: '010-5678-9012',
-      category: '시스템문의',
-      subject: '로그인 문제',
-      content: '웹사이트에서 로그인이 되지 않습니다. 비밀번호를 재설정하고 싶습니다.',
-      status: '답변완료',
-      priority: '낮음',
-      submittedDate: '2024-01-13 13:20',
-      assignedTo: '박서비스',
-      tenant: '시스템',
-      reply: '비밀번호 재설정 링크를 이메일로 발송드렸습니다. 확인 후 새로운 비밀번호로 설정해 주세요.'
+  // 데이터베이스에서 문의 목록 로드
+  useEffect(() => {
+    loadInquiries();
+  }, []);
+
+  const loadInquiries = async () => {
+    try {
+      setLoading(true);
+      console.log('🔄 본사 고객서비스: 문의 목록 로드 시작');
+      
+      const data = await getAllInquiries();
+      
+      // 데이터베이스 형식을 UI 형식으로 변환
+      const formattedInquiries = data.map(inquiry => ({
+        id: inquiry.id,
+        customerName: inquiry.users?.name || '알 수 없음',
+        customerEmail: inquiry.email,
+        customerPhone: inquiry.phone || inquiry.users?.phone || '미등록',
+        category: inquiry.category,
+        subject: inquiry.title,
+        content: inquiry.content,
+        status: inquiry.status,
+        priority: inquiry.priority,
+        submittedDate: new Date(inquiry.created_at).toLocaleString('ko-KR'),
+        assignedTo: inquiry.assigned_to || '미배정',
+        tenant: inquiry.product_brand || inquiry.tenant || '일반',
+        reply: inquiry.reply_content,
+        replyDate: inquiry.reply_date ? new Date(inquiry.reply_date).toLocaleString('ko-KR') : null
+      }));
+      
+      setInquiries(formattedInquiries);
+      console.log(`✅ 본사 고객서비스: ${formattedInquiries.length}건 문의 로드 완료`);
+    } catch (error) {
+      console.error('문의 목록 로드 실패:', error);
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
 
   const statusOptions = [
     { value: 'all', label: '전체' },
@@ -119,31 +85,69 @@ const CustomerService = () => {
   });
 
   // 문의 상태 변경
-  const handleStatusChange = (inquiryId, newStatus) => {
-    setInquiries(inquiries.map(inquiry => 
-      inquiry.id === inquiryId ? { ...inquiry, status: newStatus } : inquiry
-    ));
-    alert(`문의 상태가 '${newStatus}'로 변경되었습니다.`);
+  const handleStatusChange = async (inquiryId, newStatus) => {
+    try {
+      console.log('🔄 문의 상태 변경:', inquiryId, newStatus);
+      
+      // 데이터베이스에 상태 변경 저장
+      const success = await updateInquiryStatus(inquiryId, newStatus, '본사 관리자');
+      
+      if (success) {
+        // UI 상태 업데이트
+        setInquiries(inquiries.map(inquiry => 
+          inquiry.id === inquiryId ? { 
+            ...inquiry, 
+            status: newStatus,
+            assignedTo: newStatus === '처리중' ? '본사 관리자' : inquiry.assignedTo
+          } : inquiry
+        ));
+        alert(`문의 상태가 '${newStatus}'로 변경되었습니다.`);
+        console.log('✅ 문의 상태 변경 완료');
+      } else {
+        alert('문의 상태 변경 중 오류가 발생했습니다.');
+      }
+    } catch (error) {
+      console.error('문의 상태 변경 실패:', error);
+      alert('문의 상태 변경 중 오류가 발생했습니다.');
+    }
   };
 
   // 답변 등록
-  const handleReply = (inquiryId) => {
+  const handleReply = async (inquiryId) => {
     if (!replyText.trim()) {
       alert('답변 내용을 입력해주세요.');
       return;
     }
 
-    setInquiries(inquiries.map(inquiry => 
-      inquiry.id === inquiryId ? { 
-        ...inquiry, 
-        reply: replyText,
-        status: '답변완료',
-        replyDate: new Date().toISOString()
-      } : inquiry
-    ));
-    setReplyText('');
-    setShowDetailModal(false);
-    alert('답변이 등록되었습니다.');
+    try {
+      console.log('💬 답변 등록 시작:', inquiryId);
+      
+      // 데이터베이스에 답변 저장
+      const success = await replyToInquiry(inquiryId, replyText, '본사 관리자');
+      
+      if (success) {
+        // UI 상태 업데이트
+        setInquiries(inquiries.map(inquiry => 
+          inquiry.id === inquiryId ? { 
+            ...inquiry, 
+            reply: replyText,
+            status: '답변완료',
+            assignedTo: '본사 관리자',
+            replyDate: new Date().toLocaleString('ko-KR')
+          } : inquiry
+        ));
+        
+        setReplyText('');
+        setShowDetailModal(false);
+        alert('답변이 등록되었습니다.');
+        console.log('✅ 답변 등록 완료');
+      } else {
+        alert('답변 등록 중 오류가 발생했습니다.');
+      }
+    } catch (error) {
+      console.error('답변 등록 실패:', error);
+      alert('답변 등록 중 오류가 발생했습니다.');
+    }
   };
 
   // 문의 상세 정보 보기
@@ -173,6 +177,19 @@ const CustomerService = () => {
 
   // 답변 대기 중인 문의 수
   const pendingCount = inquiries.filter(i => i.status === '답변대기').length;
+
+  if (loading) {
+    return (
+      <div className="page">
+        <div className="page-header">
+          <h1>고객 서비스 관리</h1>
+        </div>
+        <div style={{ textAlign: 'center', padding: '50px' }}>
+          <div>문의 목록을 불러오는 중...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page">

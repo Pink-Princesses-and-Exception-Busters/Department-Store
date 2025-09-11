@@ -80,6 +80,7 @@ const Layout = ({ children, userRole }: LayoutProps) => {
         ...commonItems.slice(0, 1), // 대시보드
         { path: '/admin/products', icon: Package, label: '상품 관리' },
         { path: '/admin/customers', icon: Building2, label: '고객 관리' },
+        { path: '/admin/customer-service', icon: MessageSquare, label: '고객 서비스' },
         { path: '/admin/dummy-products', icon: Package, label: '더미 상품' },
         ...commonItems.slice(1), // 나머지 공통 메뉴
       ];
