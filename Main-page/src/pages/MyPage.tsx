@@ -19,7 +19,11 @@ const MyPage: React.FC = () => {
             '결제완료': 0,
             '상품준비': 0,
             '배송중': 0,
-            '배송완료': 0
+            '배송완료': 0,
+            '픽업가능': 0,
+            '주문취소': 0,
+            '반품신청': 0,
+            '반품완료': 0
         }
     })
     const [showPasswordModal, setShowPasswordModal] = useState(false)
@@ -115,8 +119,15 @@ const MyPage: React.FC = () => {
         if (!currentUser) return
 
         try {
+            const userId = currentUser.id || currentUser.email || currentUser.name
+            console.log(`👤 주문 조회 시작: 사용자 ID = ${userId}`, { 
+                id: currentUser.id, 
+                email: currentUser.email, 
+                name: currentUser.name 
+            })
+            
             // 데이터베이스에서 사용자 주문 데이터 가져오기
-            let userOrders = await getUserOrders(currentUser.id || currentUser.email || currentUser.name)
+            let userOrders = await getUserOrders(userId)
             
             // 데이터베이스에 주문이 없으면 로컬스토리지에서 마이그레이션 시도
             if (userOrders.length === 0) {
@@ -127,6 +138,13 @@ const MyPage: React.FC = () => {
                     userOrders = await getUserOrders(currentUser.id || currentUser.email || currentUser.name)
                 }
             }
+            
+            console.log(`📦 마이페이지: ${userOrders.length}개 주문 로드됨`, userOrders.map(o => ({
+                id: o.id,
+                date: o.order_date,
+                status: o.status,
+                amount: o.total_amount
+            })))
             
             setOrders(userOrders)
 
@@ -142,9 +160,19 @@ const MyPage: React.FC = () => {
             const oneMonthAgo = new Date()
             oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1)
             
+            console.log(`📅 최근 1개월 기준일: ${oneMonthAgo.toISOString()}`)
+            
             const recentOrders = userOrders.filter((order: Order) => 
-                order.created_at && new Date(order.created_at) >= oneMonthAgo
+                order.order_date && new Date(order.order_date) >= oneMonthAgo
             )
+            
+            console.log(`📊 최근 1개월 주문: 전체 ${userOrders.length}개 → 최근 ${recentOrders.length}개`)
+            console.log('최근 주문 상세:', recentOrders.map(o => ({
+                id: o.id,
+                date: o.order_date,
+                status: o.status,
+                amount: o.total_amount
+            })))
 
             const total_orders = recentOrders.length
             const total_amount = recentOrders.reduce((sum: number, order: Order) => sum + order.total_amount, 0)
@@ -157,9 +185,15 @@ const MyPage: React.FC = () => {
                 '결제완료': 0,
                 '상품준비': 0,
                 '배송중': 0,
-                '배송완료': 0
+                '배송완료': 0,
+                '픽업가능': 0,
+                '주문취소': 0,
+                '반품신청': 0,
+                '반품완료': 0
             })
 
+            console.log(`📈 주문 상태별 통계:`, status_counts)
+            
             setOrderStats({
                 total_orders,
                 total_amount,
@@ -243,7 +277,7 @@ const MyPage: React.FC = () => {
                     oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1)
                     
                     const recentOrders = userOrders.filter((order: Order) => 
-                        order.created_at && new Date(order.created_at) >= oneMonthAgo
+                        order.order_date && new Date(order.order_date) >= oneMonthAgo
                     )
 
                     const total_orders = recentOrders.length
@@ -255,6 +289,7 @@ const MyPage: React.FC = () => {
                         '상품준비': 0,
                         '배송중': 0,
                         '배송완료': 0,
+                        '픽업가능': 0,
                         '주문취소': 0,
                         '반품신청': 0,
                         '반품완료': 0
@@ -444,6 +479,8 @@ const MyPage: React.FC = () => {
         if (selectedOrderStatus === '전체') return true
         return order.status === selectedOrderStatus
     })
+    
+    console.log(`🔍 필터링 결과: 전체 ${orders.length}개 → 필터링 후 ${filteredOrders.length}개 (필터: ${selectedOrderStatus})`)
 
     // 주문 상세 보기
     const handleOrderDetailClick = (order: Order) => {
@@ -679,7 +716,7 @@ const MyPage: React.FC = () => {
                                         <div className="text-2xl mb-2">📋</div>
                                         <div className="flex flex-col gap-1">
                                             <span className="text-sm text-gray-600">픽업가능</span>
-                                            <span className="text-lg font-semibold text-gray-800">0건</span>
+                                            <span className="text-lg font-semibold text-gray-800">{orderStats.status_counts['픽업가능'] || 0}건</span>
                                         </div>
                                     </div>
                                     <div className="text-gray-300 text-base mx-2">→</div>
@@ -687,7 +724,7 @@ const MyPage: React.FC = () => {
                                         <div className="text-2xl mb-2">💻</div>
                                         <div className="flex flex-col gap-1">
                                             <span className="text-sm text-gray-600">배송/픽업완료</span>
-                                            <span className="text-lg font-semibold text-gray-800">0건</span>
+                                            <span className="text-lg font-semibold text-gray-800">{orderStats.status_counts['배송완료']}건</span>
                                         </div>
                                     </div>
                                 </div>
