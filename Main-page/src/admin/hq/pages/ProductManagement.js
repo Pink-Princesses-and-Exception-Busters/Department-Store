@@ -28,17 +28,66 @@ const ProductManagement = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [categories, setCategories] = useState([]);
+  const [categoryMap, setCategoryMap] = useState(new Map());
+  const [categoryHierarchyMap, setCategoryHierarchyMap] = useState(new Map());
 
-  // 상품 데이터 로드
+  // 상품 데이터 및 카테고리 데이터 로드
   useEffect(() => {
-    loadProducts();
+    loadData();
   }, []);
+
+  // 카테고리 데이터 로드
+  const loadCategories = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('id, name, level, parent_id')
+        .order('level', { ascending: true });
+
+      if (error) {
+        console.error('카테고리 로드 오류:', error);
+        return;
+      }
+
+      // 카테고리 맵 생성 (ID -> 이름)
+      const catMap = new Map();
+      const hierarchyMap = new Map();
+      
+      data?.forEach(category => {
+        catMap.set(category.id, category.name);
+      });
+      
+      // 계층 구조 맵 생성 (ID -> 전체 경로)
+      data?.forEach(category => {
+        let fullPath = category.name;
+        let currentCategory = category;
+        
+        // 부모 카테고리들을 따라 올라가면서 전체 경로 구성
+        while (currentCategory.parent_id) {
+          const parentCategory = data.find(cat => cat.id === currentCategory.parent_id);
+          if (parentCategory) {
+            fullPath = `${parentCategory.name} > ${fullPath}`;
+            currentCategory = parentCategory;
+          } else {
+            break;
+          }
+        }
+        
+        hierarchyMap.set(category.id, fullPath);
+      });
+      
+      setCategoryMap(catMap);
+      setCategoryHierarchyMap(hierarchyMap);
+
+      return data || [];
+    } catch (err) {
+      console.error('카테고리 로드 중 오류:', err);
+      return [];
+    }
+  };
 
   const loadProducts = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      
       const result = await getProducts();
       
       if (result.success) {
@@ -53,6 +102,24 @@ const ProductManagement = () => {
     } catch (err) {
       console.error('상품 로드 오류:', err);
       setError('상품 데이터를 불러오는 중 오류가 발생했습니다.');
+    }
+  };
+
+  // 모든 데이터 로드
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // 병렬로 카테고리와 상품 데이터 로드
+      await Promise.all([
+        loadCategories(),
+        loadProducts()
+      ]);
+      
+    } catch (err) {
+      console.error('데이터 로드 오류:', err);
+      setError('데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
@@ -114,6 +181,16 @@ const ProductManagement = () => {
     return statusMap[status] || status;
   };
 
+  // 카테고리 ID를 카테고리명으로 변환
+  const getCategoryName = (categoryId) => {
+    return categoryMap.get(categoryId) || `카테고리 ${categoryId}`;
+  };
+
+  // 카테고리 ID를 계층 구조 경로로 변환
+  const getCategoryHierarchy = (categoryId) => {
+    return categoryHierarchyMap.get(categoryId) || getCategoryName(categoryId);
+  };
+
   const handleMenuClick = (item) => {
     if (item.path) {
       navigate(item.path);
@@ -133,11 +210,13 @@ const ProductManagement = () => {
   const handleExport = () => {
     // CSV 내보내기 기능
     const csvContent = [
-      ['상품코드', '상품명', '브랜드', '카테고리ID', '가격', '상태', '재고', '판매량', '등록일', '최종수정일'].join(','),
+      ['상품코드', '상품명', '브랜드', '카테고리', '카테고리경로', '카테고리ID', '가격', '상태', '재고', '판매량', '등록일', '최종수정일'].join(','),
       ...filteredProducts.map(product => [
         product.id,
-        product.name,
-        product.brand || '',
+        `"${product.name}"`,
+        `"${product.brand || ''}"`,
+        `"${getCategoryName(product.category_id)}"`,
+        `"${getCategoryHierarchy(product.category_id)}"`,
         product.category_id,
         product.price,
         getProductStatusText(product.status),
@@ -297,7 +376,7 @@ const ProductManagement = () => {
           }}>
             <strong>오류:</strong> {error}
             <button 
-              onClick={loadProducts}
+              onClick={loadData}
               style={{ 
                 marginLeft: '1rem', 
                 padding: '0.25rem 0.5rem', 
@@ -347,13 +426,13 @@ const ProductManagement = () => {
                 border: '1px solid #d1d5db',
                 borderRadius: '8px',
                 fontSize: '0.875rem',
-                minWidth: '120px'
+                minWidth: '150px'
               }}
             >
               <option value="all">전체 카테고리</option>
               {categories.filter(cat => cat !== 'all').map(category => (
                 <option key={category} value={category}>
-                  카테고리 {category}
+                  {getCategoryName(category)}
                 </option>
               ))}
             </select>
@@ -414,7 +493,7 @@ const ProductManagement = () => {
                   <th>상품코드</th>
                   <th>상품명</th>
                   <th>브랜드</th>
-                  <th>카테고리ID</th>
+                  <th>카테고리</th>
                   <th>가격</th>
                   <th>상태</th>
                   <th>재고</th>
@@ -463,7 +542,27 @@ const ProductManagement = () => {
                     <td style={{ fontWeight: '600' }}>{product.name}</td>
                     <td>{product.brand || '-'}</td>
                     <td>
-                      <span className="badge badge-info">{product.category_id}</span>
+                      <div style={{ fontSize: '0.875rem' }}>
+                        <div 
+                          style={{ 
+                            fontWeight: '600', 
+                            color: '#374151',
+                            marginBottom: '2px'
+                          }}
+                        >
+                          {getCategoryName(product.category_id)}
+                        </div>
+                        <div 
+                          style={{ 
+                            fontSize: '0.75rem', 
+                            color: '#6b7280',
+                            fontStyle: 'italic'
+                          }}
+                          title={`카테고리 ID: ${product.category_id}`}
+                        >
+                          {getCategoryHierarchy(product.category_id)}
+                        </div>
+                      </div>
                     </td>
                     <td style={{ fontWeight: '600' }}>₩{product.price?.toLocaleString()}</td>
                     <td>
