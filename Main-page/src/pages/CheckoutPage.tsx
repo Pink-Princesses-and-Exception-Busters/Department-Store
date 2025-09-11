@@ -74,7 +74,7 @@ const CheckoutPage: React.FC = () => {
     const user = currentUser
     
     // 배송비 계산 (FAMILY 등급은 3,000원, SILVER 이상은 무료)
-    const shippingFee = user && user.grade === 'FAMILY' ? 3000 : 0
+    const shippingFee = user && (user.grade === 'SILVER' || user.grade === 'GOLD' || user.grade === 'DIAMOND' || user.grade === 'PRESTIGE VIP') ? 0 : 3000
     
     // 쿠폰 할인 적용
     const availableCoupons = getAvailableCoupons(totalPrice)

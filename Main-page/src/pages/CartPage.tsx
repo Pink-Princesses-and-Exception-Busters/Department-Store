@@ -46,8 +46,8 @@ const CartPage: React.FC = () => {
   // 사용자 등급 확인
   const user = currentUser
   
-  // 배송비 계산 (기본값은 3,000원, 등급 정보가 있으면 해당 등급에 따라 계산)
-  const shippingFee = user && user.grade === 'SILVER' ? 0 : 3000
+  // 배송비 계산 (FAMILY 등급은 3,000원, SILVER 이상은 무료)
+  const shippingFee = user && (user.grade === 'SILVER' || user.grade === 'GOLD' || user.grade === 'DIAMOND' || user.grade === 'PRESTIGE VIP') ? 0 : 3000
   
   const selectedTotalPrice = getSelectedTotalPrice()
   const availableCoupons = getAvailableCoupons(selectedTotalPrice)

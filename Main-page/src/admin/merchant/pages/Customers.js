@@ -65,11 +65,33 @@ const Customers = () => {
     customer.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const getCustomerGrade = (totalSpent) => {
-    if (totalSpent >= 500000) return { grade: 'VIP', color: '#dc3545' };
-    if (totalSpent >= 300000) return { grade: '골드', color: '#ffc107' };
-    if (totalSpent >= 100000) return { grade: '실버', color: '#6c757d' };
-    return { grade: '브론즈', color: '#28a745' };
+  // 고객 등급 계산 (연간 구매금액 기준)
+  const getCustomerGrade = (annualSpent) => {
+    if (annualSpent >= 120000000) return { 
+      grade: 'PRESTIGE VIP', 
+      color: '#8B5CF6', // 보라색
+      bgColor: '#F3E8FF' 
+    };
+    if (annualSpent >= 80000000) return { 
+      grade: 'DIAMOND', 
+      color: '#3B82F6', // 파란색
+      bgColor: '#EBF8FF' 
+    };
+    if (annualSpent >= 30000000) return { 
+      grade: 'GOLD', 
+      color: '#F59E0B', // 금색
+      bgColor: '#FFFBEB' 
+    };
+    if (annualSpent >= 5000000) return { 
+      grade: 'SILVER', 
+      color: '#6B7280', // 회색
+      bgColor: '#F9FAFB' 
+    };
+    return { 
+      grade: 'FAMILY', 
+      color: '#10B981', // 초록색
+      bgColor: '#ECFDF5' 
+    };
   };
 
   // 고객 관리 함수들
@@ -241,7 +263,7 @@ const Customers = () => {
                 <th>연락처</th>
                 <th>가입일</th>
                 <th>주문 횟수</th>
-                <th>총 구매액</th>
+                <th>연간 구매액</th>
                 <th>등급</th>
                 <th>최근 주문</th>
                 <th>상태</th>
@@ -250,7 +272,7 @@ const Customers = () => {
             </thead>
             <tbody>
               {filteredCustomers.map((customer) => {
-                const gradeInfo = getCustomerGrade(customer.totalSpent);
+                const gradeInfo = getCustomerGrade(customer.totalSpent); // totalSpent를 연간 구매금액으로 간주
                 
                 return (
                   <tr key={customer.id}>
@@ -291,7 +313,7 @@ const Customers = () => {
                       <span 
                         className="badge"
                         style={{ 
-                          backgroundColor: gradeInfo.color + '20',
+                          backgroundColor: gradeInfo.bgColor,
                           color: gradeInfo.color,
                           border: `1px solid ${gradeInfo.color}`
                         }}
@@ -358,16 +380,26 @@ const Customers = () => {
 
       {/* 고객 등급별 통계 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '1.5rem' }}>
-        {['VIP', '골드', '실버', '브론즈'].map(grade => {
+        {['PRESTIGE VIP', 'DIAMOND', 'GOLD', 'SILVER', 'FAMILY'].map(grade => {
           const count = customers.filter(c => getCustomerGrade(c.totalSpent).grade === grade).length;
-          const gradeInfo = getCustomerGrade(grade === 'VIP' ? 500000 : grade === '골드' ? 300000 : grade === '실버' ? 100000 : 50000);
+          const gradeInfo = getCustomerGrade(
+            grade === 'PRESTIGE VIP' ? 120000000 : 
+            grade === 'DIAMOND' ? 80000000 : 
+            grade === 'GOLD' ? 30000000 : 
+            grade === 'SILVER' ? 5000000 : 0
+          );
           
           return (
-            <div key={grade} className="card" style={{ textAlign: 'center' }}>
+            <div key={grade} className="card" style={{ 
+              textAlign: 'center',
+              backgroundColor: gradeInfo.bgColor,
+              border: `2px solid ${gradeInfo.color}`,
+              borderRadius: '12px'
+            }}>
               <h3 style={{ color: gradeInfo.color, fontSize: '2rem', marginBottom: '0.5rem' }}>
                 {count}
               </h3>
-              <p style={{ color: '#666' }}>{grade} 고객</p>
+              <p style={{ color: gradeInfo.color, fontWeight: '600', fontSize: '0.9rem' }}>{grade} 고객</p>
             </div>
           );
         })}
@@ -406,9 +438,16 @@ const Customers = () => {
                 </div>
                 <div>
                   <h3 style={{ margin: 0, marginBottom: '0.5rem' }}>{selectedCustomer.name}</h3>
-                  <span className={`badge ${getCustomerGrade(selectedCustomer.totalSpent).color === '#dc3545' ? 'badge-danger' : 
-                    getCustomerGrade(selectedCustomer.totalSpent).color === '#ffc107' ? 'badge-warning' :
-                    getCustomerGrade(selectedCustomer.totalSpent).color === '#6c757d' ? 'badge-info' : 'badge-success'}`}>
+                  <span 
+                    className="badge"
+                    style={{
+                      backgroundColor: getCustomerGrade(selectedCustomer.totalSpent).bgColor,
+                      color: getCustomerGrade(selectedCustomer.totalSpent).color,
+                      border: `2px solid ${getCustomerGrade(selectedCustomer.totalSpent).color}`,
+                      fontWeight: '700',
+                      fontSize: '0.85rem'
+                    }}
+                  >
                     {getCustomerGrade(selectedCustomer.totalSpent).grade} 고객
                   </span>
                 </div>
@@ -458,7 +497,7 @@ const Customers = () => {
                   <h3 style={{ margin: 0, color: '#28a745', fontSize: '2rem' }}>
                     ₩{selectedCustomer.totalSpent.toLocaleString()}
                   </h3>
-                  <p style={{ margin: 0, color: '#666' }}>총 구매 금액</p>
+                  <p style={{ margin: 0, color: '#666' }}>연간 구매 금액</p>
                 </div>
                 <div style={{ textAlign: 'center', padding: '1rem', background: '#f8f9fa', borderRadius: '8px' }}>
                   <h3 style={{ margin: 0, color: '#ffc107', fontSize: '2rem' }}>

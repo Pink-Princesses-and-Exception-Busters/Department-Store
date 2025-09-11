@@ -303,7 +303,7 @@ const Settlements = () => {
         <div className="header-content">
           <h1 className="page-title">
             <DollarSign className="title-icon" />
-            정산관리
+            정산관리(미구현)
           </h1>
           <p className="page-description">
             정산 내역, 계약 관리, 수수료 설정을 통합 관리합니다
