@@ -32,6 +32,28 @@ const MyPage: React.FC = () => {
     const [selectedMenuItem, setSelectedMenuItem] = useState('')
     const [showMembershipModal, setShowMembershipModal] = useState(false)
     const [loading, setLoading] = useState(true)
+    const [userGrade, setUserGrade] = useState<{
+        currentGrade: string,
+        totalPurchaseAmount: number,
+        nextGrade: string | null,
+        nextGradeRequired: number | null,
+        progressPercentage: number
+    }>({
+        currentGrade: 'FAMILY',
+        totalPurchaseAmount: 0,
+        nextGrade: 'SILVER',
+        nextGradeRequired: 5000000,
+        progressPercentage: 0
+    })
+    
+    // 등급별 기준 정의
+    const gradeThresholds = {
+        FAMILY: { min: 0, max: 4999999, next: 'SILVER', nextRequired: 5000000 },
+        SILVER: { min: 5000000, max: 29999999, next: 'GOLD', nextRequired: 30000000 },
+        GOLD: { min: 30000000, max: 79999999, next: 'DIAMOND', nextRequired: 80000000 },
+        DIAMOND: { min: 80000000, max: 119999999, next: 'PRESTIGE VIP', nextRequired: 120000000 },
+        'PRESTIGE VIP': { min: 120000000, max: Infinity, next: null, nextRequired: null }
+    }
     
     // 회원정보 변경을 위한 상태
     const [editUserInfo, setEditUserInfo] = useState<{
@@ -53,6 +75,41 @@ const MyPage: React.FC = () => {
     const [searchParams] = useSearchParams()
     const { currentUser } = useUser()
 
+    // 사용자 등급 계산 함수
+    const calculateUserGrade = (totalAmount: number) => {
+        let currentGrade = 'FAMILY'
+        let nextGrade: string | null = 'SILVER'
+        let nextGradeRequired: number | null = 5000000
+        let progressPercentage = 0
+
+        // 현재 등급 결정
+        for (const [grade, threshold] of Object.entries(gradeThresholds)) {
+            if (totalAmount >= threshold.min && totalAmount <= threshold.max) {
+                currentGrade = grade
+                nextGrade = threshold.next || null
+                nextGradeRequired = threshold.nextRequired || null
+                
+                // 진행률 계산
+                if (threshold.nextRequired) {
+                    const currentLevelProgress = totalAmount - threshold.min
+                    const totalLevelRange = threshold.nextRequired - threshold.min
+                    progressPercentage = (currentLevelProgress / totalLevelRange) * 100
+                } else {
+                    progressPercentage = 100 // 최고 등급
+                }
+                break
+            }
+        }
+
+        return {
+            currentGrade,
+            totalPurchaseAmount: totalAmount,
+            nextGrade: nextGrade,
+            nextGradeRequired: nextGradeRequired,
+            progressPercentage: Math.min(progressPercentage, 100)
+        }
+    }
+
     // 주문 데이터 로드 함수
     const loadOrders = async () => {
         if (!currentUser) return
@@ -73,7 +130,15 @@ const MyPage: React.FC = () => {
             
             setOrders(userOrders)
 
-            // 주문 통계 계산
+            // 전체 구매 금액 계산 (등급 산정용 - 배송완료된 주문만)
+            const completedOrders = userOrders.filter((order: Order) => order.status === '배송완료')
+            const totalLifetimePurchase = completedOrders.reduce((sum: number, order: Order) => sum + order.total_amount, 0)
+            
+            // 사용자 등급 계산 및 업데이트
+            const gradeInfo = calculateUserGrade(totalLifetimePurchase)
+            setUserGrade(gradeInfo)
+
+            // 주문 통계 계산 (최근 1개월)
             const oneMonthAgo = new Date()
             oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1)
             
@@ -449,11 +514,17 @@ const MyPage: React.FC = () => {
                 <div className="bg-gradient-to-br from-gray-50 to-gray-200 rounded-xl p-8 mb-8 shadow-lg">
                     <div className="flex justify-between items-start mb-6 pb-6 border-b border-gray-300">
                         <div className="flex items-center gap-4 flex-wrap">
-                            <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-yellow-300 rounded-full flex items-center justify-center text-2xl font-bold text-gray-800 shadow-lg">
-                                F
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl font-bold text-white shadow-lg ${
+                                userGrade.currentGrade === 'FAMILY' ? 'bg-gradient-to-br from-yellow-400 to-yellow-300' :
+                                userGrade.currentGrade === 'SILVER' ? 'bg-gradient-to-br from-gray-400 to-gray-300' :
+                                userGrade.currentGrade === 'GOLD' ? 'bg-gradient-to-br from-yellow-400 to-yellow-500' :
+                                userGrade.currentGrade === 'DIAMOND' ? 'bg-gradient-to-br from-blue-200 to-blue-400' :
+                                'bg-gradient-to-br from-purple-500 to-pink-500'
+                            }`}>
+                                {userGrade.currentGrade.charAt(0)}
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-sm text-gray-600 font-medium">FAMILY</span>
+                                <span className="text-sm text-gray-600 font-medium">{userGrade.currentGrade}</span>
                                 <span className="text-lg font-semibold text-gray-800 mt-0.5">{user.name}</span>
                             </div>
                             <button 
@@ -966,17 +1037,23 @@ const MyPage: React.FC = () => {
                 {/* 멤버십 혜택 모달 */}
                 {showMembershipModal && (
                     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                        <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-                            <div className="flex justify-between items-center p-5 border-b border-gray-200">
+                        <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] shadow-2xl flex flex-col">
+                            {/* 고정 헤더 */}
+                            <div className="flex justify-between items-center p-5 border-b border-gray-200 bg-white rounded-t-xl flex-shrink-0 sticky top-0 z-10 shadow-sm">
                                 <h3 className="m-0 text-lg font-semibold text-gray-800">멤버십 등급별 혜택</h3>
                                 <button 
-                                    className="bg-transparent border-none text-2xl text-gray-400 cursor-pointer p-0 w-8 h-8 flex items-center justify-center hover:text-gray-800"
+                                    className="bg-transparent border-none text-2xl text-gray-400 cursor-pointer p-0 w-8 h-8 flex items-center justify-center hover:text-gray-800 transition-colors duration-200 hover:bg-gray-100 rounded-full"
                                     onClick={handleMembershipModalClose}
+                                    title="닫기"
                                 >
                                     ×
                                 </button>
                             </div>
-                            <div className="p-8">
+                            {/* 스크롤 가능한 컨텐츠 영역 */}
+                            <div className="p-8 overflow-y-auto flex-1" style={{
+                                scrollbarWidth: 'thin',
+                                scrollbarColor: '#d1d5db #f3f4f6'
+                            }}>
                                 <div className="grid grid-cols-2 gap-5 mb-8">
                                     <div className="border-2 border-gray-300 rounded-xl p-5 transition-all duration-300 hover:border-gray-400 hover:shadow-lg border-gray-800 bg-gradient-to-br from-gray-50 to-gray-200">
                                         <div className="flex items-center gap-4 mb-5">
@@ -986,7 +1063,9 @@ const MyPage: React.FC = () => {
                                             <div>
                                                 <h4 className="m-0 mb-1 text-xl font-semibold text-gray-800">FAMILY</h4>
                                                 <p className="m-0 mb-2 text-gray-600 text-sm">첫 구매 시 자동 등급</p>
-                                                <span className="bg-gray-800 text-white py-1 px-2 rounded-full text-xs font-semibold">현재 등급</span>
+                                                {userGrade.currentGrade === 'FAMILY' && (
+                                                    <span className="bg-gray-800 text-white py-1 px-2 rounded-full text-xs font-semibold">현재 등급</span>
+                                                )}
                                             </div>
                                         </div>
                                         <div>
@@ -1006,6 +1085,9 @@ const MyPage: React.FC = () => {
                                             <div>
                                                 <h4 className="m-0 mb-1 text-xl font-semibold text-gray-800">SILVER</h4>
                                                 <p className="m-0 mb-2 text-gray-600 text-sm">연간 구매금액 500만원 이상</p>
+                                                {userGrade.currentGrade === 'SILVER' && (
+                                                    <span className="bg-gray-800 text-white py-1 px-2 rounded-full text-xs font-semibold">현재 등급</span>
+                                                )}
                                             </div>
                                         </div>
                                         <div>
@@ -1026,6 +1108,9 @@ const MyPage: React.FC = () => {
                                             <div>
                                                 <h4 className="m-0 mb-1 text-xl font-semibold text-gray-800">GOLD</h4>
                                                 <p className="m-0 mb-2 text-gray-600 text-sm">연간 구매금액 3,000만원 이상</p>
+                                                {userGrade.currentGrade === 'GOLD' && (
+                                                    <span className="bg-gray-800 text-white py-1 px-2 rounded-full text-xs font-semibold">현재 등급</span>
+                                                )}
                                             </div>
                                         </div>
                                         <div>
@@ -1047,6 +1132,9 @@ const MyPage: React.FC = () => {
                                             <div>
                                                 <h4 className="m-0 mb-1 text-xl font-semibold text-gray-800">DIAMOND</h4>
                                                 <p className="m-0 mb-2 text-gray-600 text-sm">연간 구매금액 8,000만원 이상</p>
+                                                {userGrade.currentGrade === 'DIAMOND' && (
+                                                    <span className="bg-gray-800 text-white py-1 px-2 rounded-full text-xs font-semibold">현재 등급</span>
+                                                )}
                                             </div>
                                         </div>
                                         <div>
@@ -1072,7 +1160,11 @@ const MyPage: React.FC = () => {
                                         <div>
                                             <h4 className="m-0 mb-2 text-3xl font-bold text-gray-800">PRESTIGE VIP</h4>
                                             <p className="m-0 mb-3 text-gray-600 text-lg">연간 구매금액 1억 2,000만원 이상</p>
-                                            <span className="bg-gradient-to-r from-purple-500 to-pink-500 text-white py-2 px-4 rounded-full text-sm font-bold shadow-md">최고 등급</span>
+                                            {userGrade.currentGrade === 'PRESTIGE VIP' ? (
+                                                <span className="bg-gray-800 text-white py-2 px-4 rounded-full text-sm font-bold shadow-md">현재 등급</span>
+                                            ) : (
+                                                <span className="bg-gradient-to-r from-purple-500 to-pink-500 text-white py-2 px-4 rounded-full text-sm font-bold shadow-md">최고 등급</span>
+                                            )}
                                         </div>
                                     </div>
                                     <div>
@@ -1097,14 +1189,33 @@ const MyPage: React.FC = () => {
                                 <div className="bg-gray-50 p-6 rounded-xl border border-gray-200">
                                     <h5 className="m-0 mb-4 text-lg font-semibold text-gray-800">다음 등급까지</h5>
                                     <div>
-                                        <span className="block mb-3 text-gray-600 text-sm">SILVER 등급까지 300,000원 더 구매하세요!</span>
-                                        <div className="w-full h-2 bg-gray-300 rounded overflow-hidden mb-2.5">
-                                            <div className="h-full bg-gradient-to-r from-gray-800 to-gray-600 transition-all duration-300" style={{ width: '0%' }}></div>
-                                        </div>
-                                        <div className="flex justify-between text-xs text-gray-600">
-                                            <span>현재: 0원</span>
-                                            <span>목표: 300,000원</span>
-                                        </div>
+                                        {userGrade.nextGrade ? (
+                                            <>
+                                                <span className="block mb-3 text-gray-600 text-sm">
+                                                    {userGrade.nextGrade} 등급까지 {((userGrade.nextGradeRequired || 0) - userGrade.totalPurchaseAmount).toLocaleString()}원 더 구매하세요!
+                                                </span>
+                                                <div className="w-full h-2 bg-gray-300 rounded overflow-hidden mb-2.5">
+                                                    <div 
+                                                        className="h-full bg-gradient-to-r from-gray-800 to-gray-600 transition-all duration-500" 
+                                                        style={{ width: `${userGrade.progressPercentage}%` }}
+                                                    ></div>
+                                                </div>
+                                                <div className="flex justify-between text-xs text-gray-600">
+                                                    <span>현재: {userGrade.totalPurchaseAmount.toLocaleString()}원</span>
+                                                    <span>목표: {(userGrade.nextGradeRequired || 0).toLocaleString()}원</span>
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <div className="text-center">
+                                                <span className="block mb-3 text-purple-600 text-sm font-semibold">
+                                                    🎉 최고 등급 달성! 축하합니다! 🎉
+                                                </span>
+                                                <div className="w-full h-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded mb-2.5"></div>
+                                                <div className="text-xs text-gray-600">
+                                                    <span>총 구매금액: {userGrade.totalPurchaseAmount.toLocaleString()}원</span>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </div>

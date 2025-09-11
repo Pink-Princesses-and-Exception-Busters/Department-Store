@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { getCurrentUser } from '../services/userService'
+import { authLogger } from '../utils/logger'
 
 export interface User {
   id: string
@@ -38,9 +39,11 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
       const user = await getCurrentUser()
       if (user) {
         setCurrentUser(user)
+      } else {
+        setCurrentUser(null)
       }
     } catch (error) {
-      console.error('Failed to refresh user:', error)
+      authLogger.error('Failed to refresh user:', error)
       setCurrentUser(null)
     }
   }

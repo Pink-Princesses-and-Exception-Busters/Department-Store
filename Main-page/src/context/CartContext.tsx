@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { CartItem, Product } from '../types'
 
 interface CartContextType {
@@ -15,6 +15,7 @@ interface CartContextType {
   getSelectedTotalPrice: () => number
   formatPrice: (price: number) => string
   getCartItemCount: () => number
+  clearCart: () => void
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
@@ -32,14 +33,64 @@ interface CartProviderProps {
 }
 
 export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
-  // 초기 장바구니 데이터 (빈 장바구니)
-  const [cartItems, setCartItems] = useState<CartItem[]>([])
+  // localStorage에서 장바구니 데이터 로드
+  const loadCartFromStorage = (): CartItem[] => {
+    try {
+      const savedCart = localStorage.getItem('shopping_cart')
+      return savedCart ? JSON.parse(savedCart) : []
+    } catch (error) {
+      console.error('장바구니 데이터 로드 실패:', error)
+      return []
+    }
+  }
+
+  // localStorage에서 선택된 아이템 로드
+  const loadSelectedFromStorage = (): string[] => {
+    try {
+      const savedSelected = localStorage.getItem('cart_selected_items')
+      return savedSelected ? JSON.parse(savedSelected) : []
+    } catch (error) {
+      console.error('선택된 아이템 데이터 로드 실패:', error)
+      return []
+    }
+  }
+
+  // localStorage에 장바구니 데이터 저장
+  const saveCartToStorage = (items: CartItem[]) => {
+    try {
+      localStorage.setItem('shopping_cart', JSON.stringify(items))
+    } catch (error) {
+      console.error('장바구니 데이터 저장 실패:', error)
+    }
+  }
+
+  // localStorage에 선택된 아이템 저장
+  const saveSelectedToStorage = (selected: string[]) => {
+    try {
+      localStorage.setItem('cart_selected_items', JSON.stringify(selected))
+    } catch (error) {
+      console.error('선택된 아이템 데이터 저장 실패:', error)
+    }
+  }
+
+  // 초기 장바구니 데이터 (localStorage에서 로드)
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => loadCartFromStorage())
   
-  // 선택된 아이템들의 ID를 관리
-  const [selectedItems, setSelectedItems] = useState<string[]>([])
+  // 선택된 아이템들의 ID를 관리 (localStorage에서 로드)
+  const [selectedItems, setSelectedItems] = useState<string[]>(() => loadSelectedFromStorage())
 
   // 전체 선택 상태 확인
   const isAllSelected = cartItems.length > 0 && selectedItems.length === cartItems.length
+
+  // 장바구니 데이터가 변경될 때마다 localStorage에 저장
+  useEffect(() => {
+    saveCartToStorage(cartItems)
+  }, [cartItems])
+
+  // 선택된 아이템이 변경될 때마다 localStorage에 저장
+  useEffect(() => {
+    saveSelectedToStorage(selectedItems)
+  }, [selectedItems])
 
   // 장바구니에 상품 추가
   const addToCart = (product: Product, quantity: number = 1) => {
@@ -129,6 +180,12 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     return new Intl.NumberFormat('ko-KR').format(price)
   }
 
+  // 장바구니 전체 비우기 (주문 완료 시 사용)
+  const clearCart = () => {
+    setCartItems([])
+    setSelectedItems([])
+  }
+
   const value: CartContextType = {
     cartItems,
     selectedItems,
@@ -142,7 +199,8 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     getTotalPrice,
     getSelectedTotalPrice,
     formatPrice,
-    getCartItemCount
+    getCartItemCount,
+    clearCart
   }
 
   return (

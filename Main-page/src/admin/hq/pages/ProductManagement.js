@@ -30,6 +30,15 @@ const ProductManagement = () => {
   const [categories, setCategories] = useState([]);
   const [categoryMap, setCategoryMap] = useState(new Map());
   const [categoryHierarchyMap, setCategoryHierarchyMap] = useState(new Map());
+  const [productStats, setProductStats] = useState({
+    totalProducts: 0,
+    activeProducts: 0,
+    soldoutProducts: 0,
+    hiddenProducts: 0,
+    totalBrands: 0,
+    totalStock: 0,
+    totalSales: 0
+  });
 
   // 상품 데이터 및 카테고리 데이터 로드
   useEffect(() => {
@@ -105,16 +114,45 @@ const ProductManagement = () => {
     }
   };
 
+  // 상품 통계 데이터 로드
+  const loadProductStats = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('status, brand, stock, sales, price');
+
+      if (error) throw error;
+
+      // 통계 계산
+      const stats = {
+        totalProducts: data?.length || 0,
+        activeProducts: data?.filter(p => p.status === 'forsale').length || 0,
+        soldoutProducts: data?.filter(p => p.status === 'soldout').length || 0,
+        hiddenProducts: data?.filter(p => p.status === 'hidden').length || 0,
+        totalBrands: new Set(data?.map(p => p.brand)).size || 0,
+        totalStock: data?.reduce((sum, p) => sum + (p.stock || 0), 0) || 0,
+        totalSales: data?.reduce((sum, p) => sum + (p.sales || 0), 0) || 0
+      };
+
+      setProductStats(stats);
+      return stats;
+    } catch (err) {
+      console.error('상품 통계 로드 오류:', err);
+      return productStats; // 기존 상태 유지
+    }
+  };
+
   // 모든 데이터 로드
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // 병렬로 카테고리와 상품 데이터 로드
+      // 병렬로 카테고리, 상품 데이터, 통계 로드
       await Promise.all([
         loadCategories(),
-        loadProducts()
+        loadProducts(),
+        loadProductStats()
       ]);
       
     } catch (err) {
@@ -125,31 +163,44 @@ const ProductManagement = () => {
     }
   };
 
-  // 상품 관리 메뉴 항목들
+  // 상품 관리 메뉴 항목들 (실시간 데이터)
   const menuItems = [
     {
-      id: 'approval',
-      title: '상품 승인',
-      description: '입점사가 등록한 상품의 승인/반려 처리',
-      icon: CheckCircle,
-      color: '#28a745',
-      path: '/product-approval',
+      id: 'products',
+      title: '전체 상품',
+      description: '등록된 모든 상품 현황',
+      icon: Package,
+      color: '#007bff',
+      path: '#products-section',
       stats: {
-        pending: 23,
-        approved: 156,
-        rejected: 8
+        total: productStats.totalProducts,
+        active: productStats.activeProducts,
+        brands: productStats.totalBrands
       }
     },
     {
-      id: 'settings',
-      title: '승인 정책',
-      description: '상품 승인 기준 및 정책 설정',
-      icon: Settings,
-      color: '#6c757d',
-      path: '/product-settings',
+      id: 'inventory',
+      title: '재고 관리',
+      description: '상품 재고 및 판매 현황',
+      icon: AlertCircle,
+      color: '#ffc107',
+      path: '/inventory-management',
       stats: {
-        activePolicies: 12,
-        lastUpdated: '2024-01-15'
+        totalStock: productStats.totalStock,
+        soldout: productStats.soldoutProducts,
+        totalSales: productStats.totalSales
+      }
+    },
+    {
+      id: 'hidden',
+      title: '숨김 상품',
+      description: '비활성화된 상품 관리',
+      icon: Eye,
+      color: '#6c757d',
+      path: '/hidden-products',
+      stats: {
+        hidden: productStats.hiddenProducts,
+        needsReview: productStats.hiddenProducts
       }
     }
   ];
@@ -238,12 +289,15 @@ const ProductManagement = () => {
     document.body.removeChild(link);
   };
 
-  // 통계 계산
+  // 통계 계산 (실시간 데이터 사용)
   const stats = {
-    totalProducts: products.length,
-    activeProducts: products.filter(p => p.status === 'forsale').length,
-    soldoutProducts: products.filter(p => p.status === 'soldout').length,
-    hiddenProducts: products.filter(p => p.status === 'hidden').length
+    totalProducts: productStats.totalProducts,
+    activeProducts: productStats.activeProducts,
+    soldoutProducts: productStats.soldoutProducts,
+    hiddenProducts: productStats.hiddenProducts,
+    totalBrands: productStats.totalBrands,
+    totalStock: productStats.totalStock,
+    totalSales: productStats.totalSales
   };
 
   return (
@@ -261,13 +315,13 @@ const ProductManagement = () => {
       {/* 통계 요약 */}
       <div className="stats-grid">
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#ffc107' }}>
-            <Clock size={20} />
+          <div className="stat-icon" style={{ background: '#007bff' }}>
+            <Package size={20} />
           </div>
           <div className="stat-content">
-            <h3>승인 대기</h3>
-            <p className="stat-value">23건</p>
-            <p className="stat-change">+5건</p>
+            <h3>전체 상품</h3>
+            <p className="stat-value">{stats.totalProducts.toLocaleString()}건</p>
+            <p className="stat-change">{stats.totalBrands}개 브랜드</p>
           </div>
         </div>
         
@@ -276,31 +330,31 @@ const ProductManagement = () => {
             <CheckCircle size={20} />
           </div>
           <div className="stat-content">
-            <h3>승인 완료</h3>
-            <p className="stat-value">156건</p>
-            <p className="stat-change">+12건</p>
+            <h3>판매 중</h3>
+            <p className="stat-value">{stats.activeProducts.toLocaleString()}건</p>
+            <p className="stat-change">{stats.totalProducts > 0 ? ((stats.activeProducts / stats.totalProducts) * 100).toFixed(1) : 0}%</p>
+          </div>
+        </div>
+        
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: '#ffc107' }}>
+            <AlertCircle size={20} />
+          </div>
+          <div className="stat-content">
+            <h3>총 재고</h3>
+            <p className="stat-value">{stats.totalStock.toLocaleString()}개</p>
+            <p className="stat-change">{stats.soldoutProducts}건 품절</p>
           </div>
         </div>
         
         <div className="stat-card">
           <div className="stat-icon" style={{ background: '#dc3545' }}>
-            <AlertCircle size={20} />
-          </div>
-          <div className="stat-content">
-            <h3>반려 건수</h3>
-            <p className="stat-value">8건</p>
-            <p className="stat-change">-2건</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#007bff' }}>
             <Eye size={20} />
           </div>
           <div className="stat-content">
-            <h3>전체 상품</h3>
-            <p className="stat-value">{stats.totalProducts}건</p>
-            <p className="stat-change">+{stats.activeProducts}건 활성</p>
+            <h3>총 판매량</h3>
+            <p className="stat-value">{stats.totalSales.toLocaleString()}개</p>
+            <p className="stat-change">{stats.hiddenProducts}건 숨김</p>
           </div>
         </div>
       </div>
@@ -325,25 +379,44 @@ const ProductManagement = () => {
               <p>{item.description}</p>
               
               <div className="menu-stats">
-                {item.id === 'approval' && (
+                {item.id === 'products' && (
                   <>
                     <span className="stat-item">
-                      <Clock size={14} />
-                      대기: {item.stats.pending}
+                      <Package size={14} />
+                      전체: {item.stats.total.toLocaleString()}
                     </span>
                     <span className="stat-item">
                       <CheckCircle size={14} />
-                      승인: {item.stats.approved}
+                      활성: {item.stats.active.toLocaleString()}
+                    </span>
+                    <span className="stat-item">
+                      브랜드: {item.stats.brands}개
                     </span>
                   </>
                 )}
-                {item.id === 'settings' && (
+                {item.id === 'inventory' && (
                   <>
                     <span className="stat-item">
-                      활성 정책: {item.stats.activePolicies}
+                      <Package size={14} />
+                      재고: {item.stats.totalStock.toLocaleString()}개
                     </span>
                     <span className="stat-item">
-                      최근 업데이트: {item.stats.lastUpdated}
+                      <AlertCircle size={14} />
+                      품절: {item.stats.soldout}건
+                    </span>
+                    <span className="stat-item">
+                      판매: {item.stats.totalSales.toLocaleString()}개
+                    </span>
+                  </>
+                )}
+                {item.id === 'hidden' && (
+                  <>
+                    <span className="stat-item">
+                      <Eye size={14} />
+                      숨김: {item.stats.hidden}건
+                    </span>
+                    <span className="stat-item">
+                      검토 필요: {item.stats.needsReview}건
                     </span>
                   </>
                 )}

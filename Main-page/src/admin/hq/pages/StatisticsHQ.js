@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -9,10 +9,13 @@ import {
   Building2,
   CheckCircle,
   Activity,
-  PieChart
+  PieChart,
+  RefreshCw,
+  Loader
 } from 'lucide-react';
 import Modal from '../../shared/components/Modal';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../shared/lib/supabase';
 
 
 const StatisticsHQ = () => {
@@ -21,35 +24,422 @@ const StatisticsHQ = () => {
   const [selectedCategory, setSelectedCategory] = useState('tenants');
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportType, setReportType] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  
+  // 실시간 통계 데이터
+  const [realTimeStats, setRealTimeStats] = useState({
+    totalTenants: 0,
+    newTenantsMonth: 0,
+    pendingProducts: 0,
+    approvedProducts: 0,
+    soldoutProducts: 0,
+    totalSales: 0,
+    totalOrders: 0,
+    totalCustomers: 0,
+    monthlySales: 0
+  });
 
-  // 카테고리별 통계 데이터
+  // 2단계: 카테고리별 상세 데이터
+  const [detailData, setDetailData] = useState({
+    topBrands: [],
+    categoryDistribution: [],
+    approvalStatus: []
+  });
+
+  // 3단계: 고급 분석 데이터
+  const [advancedData, setAdvancedData] = useState({
+    monthlyTrends: [],
+    systemMetrics: {},
+    performanceIndicators: []
+  });
+
+  // 데이터 로드
+  useEffect(() => {
+    loadStatisticsData();
+  }, [selectedPeriod]);
+
+  // 통계 데이터 로드
+  const loadStatisticsData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // 1-3단계: 모든 통계 데이터를 병렬로 로드
+      const [basicStats, topBrands, categoryDist, approvalStats, monthlyTrends, systemMetrics] = await Promise.all([
+        getBasicStatistics(),
+        getTopBrands(),
+        getCategoryDistribution(),
+        getApprovalStatus(),
+        getMonthlyTrends(),
+        getSystemMetrics()
+      ]);
+
+      setRealTimeStats(basicStats);
+      setDetailData({
+        topBrands,
+        categoryDistribution: categoryDist,
+        approvalStatus: approvalStats
+      });
+
+      // 3단계: 고급 분석 데이터 설정
+      const performanceIndicators = await getPerformanceIndicators();
+      setAdvancedData({
+        monthlyTrends,
+        systemMetrics,
+        performanceIndicators
+      });
+
+      console.log('통계 데이터 로드 완료 - 기본:', basicStats, '상세:', { topBrands, categoryDist, approvalStats }, '고급:', { monthlyTrends, systemMetrics, performanceIndicators });
+    } catch (err) {
+      console.error('통계 데이터 로드 오류:', err);
+      setError('통계 데이터를 불러오는 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 기본 통계 조회
+  const getBasicStatistics = async () => {
+    const [tenantsData, productsData, ordersData, salesData] = await Promise.all([
+      // 입점사 통계
+      supabase.from('brand_admins').select('id, joined_at').eq('status', 'active'),
+      // 상품 통계
+      supabase.from('products').select('id, status'),
+      // 주문 통계
+      supabase.from('orders').select('id, user_id, total_amount, created_at'),
+      // 월간 매출
+      supabase.from('orders')
+        .select('total_amount')
+        .gte('created_at', new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString())
+    ]);
+
+    // 신규 입점사 계산 (최근 30일)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const newTenants = tenantsData.data?.filter(tenant => 
+      new Date(tenant.joined_at) >= thirtyDaysAgo
+    ).length || 0;
+
+    // 상품별 통계 계산
+    const productStats = productsData.data?.reduce((acc, product) => {
+      acc[product.status] = (acc[product.status] || 0) + 1;
+      return acc;
+    }, {}) || {};
+
+    // 고유 고객 수 계산
+    const uniqueCustomers = new Set(ordersData.data?.map(order => order.user_id) || []).size;
+
+    // 총 매출 계산
+    const totalRevenue = ordersData.data?.reduce((sum, order) => sum + (order.total_amount || 0), 0) || 0;
+    const monthlyRevenue = salesData.data?.reduce((sum, order) => sum + (order.total_amount || 0), 0) || 0;
+
+    return {
+      totalTenants: tenantsData.data?.length || 0,
+      newTenantsMonth: newTenants,
+      pendingProducts: productStats.hidden || 0,
+      approvedProducts: productStats.forsale || 0,
+      soldoutProducts: productStats.soldout || 0,
+      totalSales: totalRevenue,
+      totalOrders: ordersData.data?.length || 0,
+      totalCustomers: uniqueCustomers,
+      monthlySales: monthlyRevenue
+    };
+  };
+
+  // 새로고침
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadStatisticsData();
+    setRefreshing(false);
+  };
+
+  // 브랜드별 매출 순위 조회
+  const getTopBrands = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('items');
+
+      if (error) throw error;
+
+      // 브랜드별 매출 계산
+      const brandStats = {};
+      data?.forEach(order => {
+        order.items?.forEach(item => {
+          const brand = item.brand;
+          const revenue = item.price * item.quantity;
+          if (!brandStats[brand]) {
+            brandStats[brand] = { sales: 0, products: 0, orders: 0 };
+          }
+          brandStats[brand].sales += revenue;
+          brandStats[brand].orders += 1;
+        });
+      });
+
+      // 상위 5개 브랜드 정렬
+      const topBrands = Object.entries(brandStats)
+        .sort(([,a], [,b]) => b.sales - a.sales)
+        .slice(0, 5)
+        .map(([brand, stats]) => ({
+          name: brand,
+          sales: stats.sales,
+          products: 0, // 별도 조회 필요
+          satisfaction: 4.5 // 임시값
+        }));
+
+      return topBrands;
+    } catch (err) {
+      console.error('브랜드 매출 조회 오류:', err);
+      return [];
+    }
+  };
+
+  // 카테고리별 상품 분포 조회
+  const getCategoryDistribution = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select(`
+          id,
+          name,
+          products (id, status)
+        `);
+
+      if (error) throw error;
+
+      const distribution = data
+        ?.filter(category => category.products.length > 0)
+        .map(category => ({
+          category: category.name,
+          count: category.products.length,
+          percentage: 0 // 전체 대비 비율은 별도 계산
+        }))
+        .sort((a, b) => b.count - a.count) || [];
+
+      // 전체 상품 수 대비 비율 계산
+      const totalProducts = distribution.reduce((sum, cat) => sum + cat.count, 0);
+      distribution.forEach(cat => {
+        cat.percentage = totalProducts > 0 ? ((cat.count / totalProducts) * 100).toFixed(1) : 0;
+      });
+
+      return distribution;
+    } catch (err) {
+      console.error('카테고리 분포 조회 오류:', err);
+      return [];
+    }
+  };
+
+  // 상품 승인 현황 조회
+  const getApprovalStatus = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('status');
+
+      if (error) throw error;
+
+      const statusCounts = data?.reduce((acc, product) => {
+        const status = product.status;
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {}) || {};
+
+      const total = Object.values(statusCounts).reduce((sum, count) => sum + count, 0);
+
+      const approvalStatus = [
+        {
+          status: '승인 완료',
+          count: statusCounts.forsale || 0,
+          percentage: total > 0 ? ((statusCounts.forsale || 0) / total * 100).toFixed(1) : 0
+        },
+        {
+          status: '승인 대기',
+          count: statusCounts.hidden || 0,
+          percentage: total > 0 ? ((statusCounts.hidden || 0) / total * 100).toFixed(1) : 0
+        },
+        {
+          status: '품절',
+          count: statusCounts.soldout || 0,
+          percentage: total > 0 ? ((statusCounts.soldout || 0) / total * 100).toFixed(1) : 0
+        }
+      ];
+
+      return approvalStatus;
+    } catch (err) {
+      console.error('승인 현황 조회 오류:', err);
+      return [];
+    }
+  };
+
+  // 3단계: 월별 매출 트렌드 조회
+  const getMonthlyTrends = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('created_at, total_amount, user_id')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // 월별 데이터 집계
+      const monthlyData = {};
+      data?.forEach(order => {
+        const date = new Date(order.created_at);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        const monthName = `${date.getMonth() + 1}월`;
+        
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = {
+            month: monthName,
+            sales: 0,
+            orders: 0,
+            customers: new Set()
+          };
+        }
+        
+        monthlyData[monthKey].sales += order.total_amount || 0;
+        monthlyData[monthKey].orders += 1;
+        monthlyData[monthKey].customers.add(order.user_id);
+      });
+
+      // 최근 6개월 데이터 정렬
+      const trends = Object.entries(monthlyData)
+        .sort(([a], [b]) => b.localeCompare(a))
+        .slice(0, 6)
+        .reverse()
+        .map(([key, data]) => ({
+          month: data.month,
+          sales: data.sales,
+          orders: data.orders,
+          customers: data.customers.size
+        }));
+
+      return trends;
+    } catch (err) {
+      console.error('월별 트렌드 조회 오류:', err);
+      return [];
+    }
+  };
+
+  // 시스템 성과 지표 조회
+  const getSystemMetrics = async () => {
+    try {
+      const [tenantsData, productsData, ordersData, usersData] = await Promise.all([
+        supabase.from('brand_admins').select('id').eq('status', 'active'),
+        supabase.from('products').select('id, status'),
+        supabase.from('orders').select('id, status'),
+        supabase.from('users').select('id')
+      ]);
+
+      const totalProducts = productsData.data?.length || 0;
+      const approvedProducts = productsData.data?.filter(p => p.status === 'forsale').length || 0;
+      const totalOrders = ordersData.data?.length || 0;
+      const completedOrders = ordersData.data?.filter(o => o.status === '배송완료').length || 0;
+
+      const metrics = {
+        systemUptime: 99.8, // 고정값
+        avgProcessingTime: 2.1, // 고정값
+        approvalRate: totalProducts > 0 ? ((approvedProducts / totalProducts) * 100).toFixed(1) : 0,
+        completionRate: totalOrders > 0 ? ((completedOrders / totalOrders) * 100).toFixed(1) : 0,
+        errorRate: 0.3, // 고정값
+        efficiency: 96.5 // 고정값
+      };
+
+      return metrics;
+    } catch (err) {
+      console.error('시스템 지표 조회 오류:', err);
+      return {
+        systemUptime: 99.8,
+        avgProcessingTime: 2.1,
+        approvalRate: 0,
+        completionRate: 0,
+        errorRate: 0.3,
+        efficiency: 96.5
+      };
+    }
+  };
+
+  // 성과 지표 계산
+  const getPerformanceIndicators = async () => {
+    try {
+      const currentStats = realTimeStats;
+      
+      const indicators = [
+        {
+          metric: '업무 처리량',
+          current: currentStats.totalOrders,
+          target: Math.max(15, currentStats.totalOrders),
+          percentage: currentStats.totalOrders >= 15 ? 
+            ((currentStats.totalOrders / 15) * 100).toFixed(0) : 
+            ((currentStats.totalOrders / 15) * 100).toFixed(0)
+        },
+        {
+          metric: '상품 승인률',
+          current: currentStats.totalTenants > 0 ? 
+            ((currentStats.approvedProducts / (currentStats.approvedProducts + currentStats.pendingProducts + currentStats.soldoutProducts)) * 100).toFixed(1) : 0,
+          target: 95,
+          percentage: currentStats.totalTenants > 0 ? 
+            (((currentStats.approvedProducts / (currentStats.approvedProducts + currentStats.pendingProducts + currentStats.soldoutProducts)) * 100) / 95 * 100).toFixed(0) : 0
+        },
+        {
+          metric: '고객 만족도',
+          current: 4.2,
+          target: 4.0,
+          percentage: ((4.2 / 4.0) * 100).toFixed(0)
+        },
+        {
+          metric: '매출 목표',
+          current: Math.round(currentStats.totalSales / 10000),
+          target: Math.max(500, Math.round(currentStats.totalSales / 10000)),
+          percentage: currentStats.totalSales > 0 ? 
+            ((currentStats.totalSales / 10000) / Math.max(500, Math.round(currentStats.totalSales / 10000)) * 100).toFixed(0) : 0
+        }
+      ];
+
+      return indicators;
+    } catch (err) {
+      console.error('성과 지표 계산 오류:', err);
+      return [];
+    }
+  };
+
+  // 카테고리별 통계 데이터 (실시간 데이터)
   const categoryData = {
     tenants: {
       title: '입점사 관리',
       icon: Building2,
       color: '#007bff',
       stats: [
-        { title: '총 입점사', value: '156', change: '+3', isPositive: true },
-        { title: '신규 입점사', value: '12', change: '+2', isPositive: true },
-        { title: '평균 매출', value: '₩2,450,000', change: '+8.5%', isPositive: true },
-        { title: '만족도', value: '4.2/5.0', change: '+0.3', isPositive: true }
+        { 
+          title: '총 입점사', 
+          value: realTimeStats.totalTenants.toString(), 
+          change: `+${realTimeStats.newTenantsMonth}`, 
+          isPositive: true 
+        },
+        { 
+          title: '신규 입점사', 
+          value: realTimeStats.newTenantsMonth.toString(), 
+          change: '최근 30일', 
+          isPositive: true 
+        },
+        { 
+          title: '평균 매출', 
+          value: realTimeStats.totalTenants > 0 ? `₩${Math.round(realTimeStats.totalSales / realTimeStats.totalTenants).toLocaleString()}` : '₩0', 
+          change: '입점사당', 
+          isPositive: true 
+        },
+        { 
+          title: '활성 상태', 
+          value: '100%', 
+          change: '모든 입점사', 
+          isPositive: true 
+        }
       ],
       details: {
-        topTenants: [
-          { name: '삼성전자', sales: 125000000, products: 45, satisfaction: 4.5 },
-          { name: 'LG전자', sales: 98000000, products: 38, satisfaction: 4.3 },
-          { name: '애플코리아', sales: 156000000, products: 52, satisfaction: 4.7 },
-          { name: '현대자동차', sales: 67000000, products: 23, satisfaction: 4.1 },
-          { name: '기아자동차', sales: 89000000, products: 31, satisfaction: 4.2 }
-        ],
-        categoryDistribution: [
-          { category: '전자제품', count: 45, percentage: 28.8 },
-          { category: '패션의류', count: 38, percentage: 24.4 },
-          { category: '화장품', count: 25, percentage: 16.0 },
-          { category: '식품', count: 22, percentage: 14.1 },
-          { category: '가구', count: 15, percentage: 9.6 },
-          { category: '기타', count: 11, percentage: 7.1 }
-        ]
+        topTenants: detailData.topBrands,
+        categoryDistribution: detailData.categoryDistribution
       }
     },
     products: {
@@ -57,25 +447,39 @@ const StatisticsHQ = () => {
       icon: CheckCircle,
       color: '#28a745',
       stats: [
-        { title: '승인 대기', value: '23', change: '-5', isPositive: true },
-        { title: '승인 완료', value: '156', change: '+12', isPositive: true },
-        { title: '반려 건수', value: '8', change: '-2', isPositive: true },
-        { title: '평균 처리시간', value: '2.3일', change: '-0.5일', isPositive: true }
+        { 
+          title: '승인 대기', 
+          value: realTimeStats.pendingProducts.toString(), 
+          change: '숨김 상품', 
+          isPositive: realTimeStats.pendingProducts === 0 
+        },
+        { 
+          title: '승인 완료', 
+          value: realTimeStats.approvedProducts.toString(), 
+          change: '판매 중', 
+          isPositive: true 
+        },
+        { 
+          title: '품절 상품', 
+          value: realTimeStats.soldoutProducts.toString(), 
+          change: '재고 없음', 
+          isPositive: false 
+        },
+        { 
+          title: '총 상품', 
+          value: (realTimeStats.approvedProducts + realTimeStats.soldoutProducts + realTimeStats.pendingProducts).toString(), 
+          change: '전체', 
+          isPositive: true 
+        }
       ],
       details: {
-        approvalStatus: [
-          { status: '승인 완료', count: 156, percentage: 83.4 },
-          { status: '승인 대기', count: 23, percentage: 12.3 },
-          { status: '반려', count: 8, percentage: 4.3 }
-        ],
-        categoryApproval: [
-          { category: '전자제품', approved: 45, pending: 5, rejected: 2 },
-          { category: '패션의류', approved: 38, pending: 8, rejected: 3 },
-          { category: '화장품', approved: 25, pending: 4, rejected: 1 },
-          { category: '식품', approved: 22, pending: 3, rejected: 1 },
-          { category: '가구', approved: 15, pending: 2, rejected: 1 },
-          { category: '기타', approved: 11, pending: 1, rejected: 0 }
-        ]
+        approvalStatus: detailData.approvalStatus,
+        categoryApproval: detailData.categoryDistribution.map(cat => ({
+          category: cat.category,
+          approved: cat.count,
+          pending: 0,
+          rejected: 0
+        }))
       }
     },
 
@@ -84,27 +488,46 @@ const StatisticsHQ = () => {
       icon: DollarSign,
       color: '#dc3545',
       stats: [
-        { title: '총 매출', value: '₩45,670,000', change: '+12.5%', isPositive: true },
-        { title: '총 주문', value: '1,234', change: '+8.3%', isPositive: true },
-        { title: '평균 주문액', value: '₩37,000', change: '+3.8%', isPositive: true },
-        { title: '고객 수', value: '892', change: '+15.2%', isPositive: true }
+        { 
+          title: '총 매출', 
+          value: `₩${Math.round(realTimeStats.totalSales / 10000).toLocaleString()}만`, 
+          change: '전체 기간', 
+          isPositive: true 
+        },
+        { 
+          title: '총 주문', 
+          value: realTimeStats.totalOrders.toLocaleString(), 
+          change: '누적 주문', 
+          isPositive: true 
+        },
+        { 
+          title: '평균 주문액', 
+          value: realTimeStats.totalOrders > 0 ? `₩${Math.round(realTimeStats.totalSales / realTimeStats.totalOrders).toLocaleString()}` : '₩0', 
+          change: '주문당', 
+          isPositive: true 
+        },
+        { 
+          title: '고객 수', 
+          value: realTimeStats.totalCustomers.toString(), 
+          change: '구매 고객', 
+          isPositive: true 
+        }
       ],
       details: {
-        monthlySales: [
-          { month: '1월', sales: 42000000, orders: 1150, customers: 820 },
-          { month: '2월', sales: 45670000, orders: 1234, customers: 892 },
-          { month: '3월', sales: 38900000, orders: 1056, customers: 756 },
-          { month: '4월', sales: 52300000, orders: 1423, customers: 1023 },
-          { month: '5월', sales: 47800000, orders: 1298, customers: 945 },
-          { month: '6월', sales: 51200000, orders: 1389, customers: 987 }
+        monthlySales: advancedData.monthlyTrends.length > 0 ? advancedData.monthlyTrends : [
+          { 
+            month: '이번 달', 
+            sales: realTimeStats.monthlySales, 
+            orders: realTimeStats.totalOrders, 
+            customers: realTimeStats.totalCustomers 
+          }
         ],
-        categorySales: [
-          { category: '전자제품', sales: 15600000, percentage: 34.2 },
-          { category: '패션의류', sales: 12300000, percentage: 26.9 },
-          { category: '화장품', sales: 8900000, percentage: 19.5 },
-          { category: '식품', sales: 6700000, percentage: 14.7 },
-          { category: '가구', sales: 2100000, percentage: 4.7 }
-        ]
+        categorySales: detailData.topBrands.map(brand => ({
+          category: brand.name,
+          sales: brand.sales,
+          percentage: realTimeStats.totalSales > 0 ? 
+            ((brand.sales / realTimeStats.totalSales) * 100).toFixed(1) : 0
+        }))
       }
     },
     operations: {
@@ -112,25 +535,60 @@ const StatisticsHQ = () => {
       icon: Activity,
       color: '#6f42c1',
       stats: [
-        { title: '시스템 가동률', value: '99.8%', change: '+0.2%', isPositive: true },
-        { title: '평균 처리시간', value: '2.1시간', change: '-0.3시간', isPositive: true },
-        { title: '업무 완료율', value: '96.5%', change: '+2.1%', isPositive: true },
-        { title: '오류 발생률', value: '0.3%', change: '-0.1%', isPositive: true }
+        { 
+          title: '시스템 가동률', 
+          value: `${advancedData.systemMetrics.systemUptime || 99.8}%`, 
+          change: '+0.2%', 
+          isPositive: true 
+        },
+        { 
+          title: '평균 처리시간', 
+          value: `${advancedData.systemMetrics.avgProcessingTime || 2.1}시간`, 
+          change: '-0.3시간', 
+          isPositive: true 
+        },
+        { 
+          title: '상품 승인률', 
+          value: `${advancedData.systemMetrics.approvalRate || 0}%`, 
+          change: '실시간', 
+          isPositive: true 
+        },
+        { 
+          title: '오류 발생률', 
+          value: `${advancedData.systemMetrics.errorRate || 0.3}%`, 
+          change: '-0.1%', 
+          isPositive: true 
+        }
       ],
       details: {
         systemUsage: [
-          { system: '입점사 관리', usage: 85, efficiency: 92 },
-          { system: '상품 승인', usage: 78, efficiency: 88 },
-          { system: '고객 서비스', usage: 92, efficiency: 95 },
-          { system: '매출 분석', usage: 65, efficiency: 89 },
-          { system: '정산 관리', usage: 88, efficiency: 91 }
+          { 
+            system: '입점사 관리', 
+            usage: Math.round((realTimeStats.totalTenants / 15) * 100), 
+            efficiency: Math.round(advancedData.systemMetrics.efficiency || 92) 
+          },
+          { 
+            system: '상품 승인', 
+            usage: Math.round((realTimeStats.approvedProducts / 200) * 100), 
+            efficiency: Math.round(parseFloat(advancedData.systemMetrics.approvalRate || 88)) 
+          },
+          { 
+            system: '고객 서비스', 
+            usage: Math.round((realTimeStats.totalCustomers / 10) * 100), 
+            efficiency: 95 
+          },
+          { 
+            system: '매출 분석', 
+            usage: Math.round((realTimeStats.totalOrders / 30) * 100), 
+            efficiency: 89 
+          },
+          { 
+            system: '정산 관리', 
+            usage: 88, 
+            efficiency: 91 
+          }
         ],
-        performanceMetrics: [
-          { metric: '업무 처리량', current: 156, target: 150, percentage: 104 },
-          { metric: '응답 시간', current: 2.1, target: 2.5, percentage: 119 },
-          { metric: '정확도', current: 98.5, target: 95, percentage: 103.7 },
-          { metric: '고객 만족도', current: 4.2, target: 4.0, percentage: 105 }
-        ]
+        performanceMetrics: advancedData.performanceIndicators
       }
     }
   };
@@ -209,12 +667,77 @@ const StatisticsHQ = () => {
     alert('리포트가 다운로드되었습니다.');
   };
 
+  // 로딩 중일 때 표시
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        minHeight: '400px',
+        flexDirection: 'column',
+        gap: '1rem'
+      }}>
+        <Loader size={32} className="animate-spin" />
+        <p style={{ color: '#666', fontSize: '1.1rem' }}>
+          통계 데이터를 불러오는 중...
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* 기간 선택 */}
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 className="card-title">본사 통계 분석</h2>
+          <div>
+            <h2 className="card-title">본사 통계 분석</h2>
+            <p style={{ color: '#666', margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>
+              실시간 데이터 기반 통계 분석 ({realTimeStats.totalTenants}개 입점사, {realTimeStats.totalOrders}건 주문)
+            </p>
+          </div>
+          <button 
+            className="btn btn-secondary"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? '새로고침 중...' : '새로고침'}
+          </button>
+        </div>
+
+        {/* 오류 메시지 */}
+        {error && (
+          <div style={{ 
+            padding: '1rem', 
+            margin: '1rem 0', 
+            background: '#fee', 
+            border: '1px solid #fcc', 
+            borderRadius: '8px',
+            color: '#c33'
+          }}>
+            <strong>오류:</strong> {error}
+            <button 
+              onClick={loadStatisticsData}
+              style={{ 
+                marginLeft: '1rem', 
+                padding: '0.25rem 0.5rem', 
+                background: '#c33', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              다시 시도
+            </button>
+          </div>
+        )}
+
+        <div style={{ marginTop: '1rem' }}>
+          <h3 style={{ margin: 0, marginBottom: '0.5rem' }}>기간 선택</h3>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button 
               className={`btn ${selectedPeriod === 'week' ? 'btn-primary' : ''}`}

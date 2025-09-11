@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import { useSearchParams, Link, useNavigate } from 'react-router-dom'
 import { FiCheckCircle, FiHome, FiShoppingBag } from 'react-icons/fi'
 import { useCouponContext } from '../context/CouponContext'
+import { useCartContext } from '../context/CartContext'
 import { createOrder, Order, OrderItem } from '../services/orderService'
 
 const PaymentSuccessPage: React.FC = () => {
@@ -12,6 +13,7 @@ const PaymentSuccessPage: React.FC = () => {
   const navigate = useNavigate()
   const hasProcessedRef = useRef(false) // 중복 실행 방지를 위한 ref
   const { selectedCoupon, useCoupon, calculateDiscount } = useCouponContext()
+  const { clearCart } = useCartContext()
 
   useEffect(() => {
     // 이미 처리되었으면 중단
@@ -114,12 +116,9 @@ const PaymentSuccessPage: React.FC = () => {
         console.log('쿠폰이 사용 처리되었습니다.')
       }
       
-      // 장바구니 비우기
-      const currentCart = localStorage.getItem('cart')
-      if (currentCart) {
-        localStorage.removeItem('cart')
-        console.log('장바구니가 자동으로 비워졌습니다.')
-      }
+      // 장바구니 비우기 (CartContext 사용)
+      clearCart()
+      console.log('장바구니가 자동으로 비워졌습니다.')
 
       // 임시 주문 데이터 제거
       sessionStorage.removeItem('pendingOrderData')

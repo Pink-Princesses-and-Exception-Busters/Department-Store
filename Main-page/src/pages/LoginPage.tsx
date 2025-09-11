@@ -1,9 +1,12 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { login } from '../services/userService'
+import { useUser } from '../context/UserContext'
+import { authLogger } from '../utils/logger'
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate()
+  const { setCurrentUser } = useUser()
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -30,13 +33,15 @@ const LoginPage: React.FC = () => {
       })
 
       if (result.success && result.user) {
+        // UserContext 상태 업데이트 - 이게 핵심!
+        setCurrentUser(result.user)
         alert(`${result.user.name}님, 환영합니다!`)
         navigate('/')
       } else {
         alert(result.error || '로그인에 실패했습니다.')
       }
     } catch (error) {
-      console.error('Login error:', error)
+      authLogger.error('Login error:', error)
       alert('로그인 중 오류가 발생했습니다.')
     } finally {
       setIsLoading(false)

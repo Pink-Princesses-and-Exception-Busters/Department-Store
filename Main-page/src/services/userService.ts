@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { User } from '../types'
+import { authLogger } from '../utils/logger'
 
 export interface SignupData {
   email: string
@@ -78,16 +79,21 @@ export const signup = async (userData: SignupData): Promise<{ success: boolean; 
 // 로그인
 export const login = async (loginData: LoginData): Promise<{ success: boolean; user?: AuthUser; error?: string }> => {
   try {
+    authLogger.log('로그인 시도:', { email: loginData.email })
+    
     const { data, error } = await supabase.auth.signInWithPassword({
       email: loginData.email,
       password: loginData.password
     })
 
     if (error) {
+      authLogger.error('Auth 오류:', error.message)
       return { success: false, error: error.message }
     }
 
     if (data.user) {
+      authLogger.log('Auth 성공, 사용자 프로필 조회 중...')
+      
       // users 테이블에서 사용자 정보 가져오기
       const { data: userProfile, error: profileError } = await supabase
         .from('users')
@@ -96,17 +102,18 @@ export const login = async (loginData: LoginData): Promise<{ success: boolean; u
         .single()
 
       if (profileError) {
-        console.error('Profile fetch error:', profileError)
+        authLogger.error('Profile fetch error:', profileError.message)
         return { success: false, error: '사용자 정보를 가져올 수 없습니다.' }
       }
 
-      // 로컬스토리지 저장 코드 삭제 - DB에서만 관리
+      authLogger.success('로그인 완료:', { name: userProfile.name, email: userProfile.email })
       return { success: true, user: userProfile }
     }
 
+    authLogger.warn('예상치 못한 상황: data.user가 없음')
     return { success: false, error: '로그인에 실패했습니다.' }
   } catch (error) {
-    console.error('Login error:', error)
+    authLogger.error('Login error:', error)
     return { success: false, error: '로그인 중 오류가 발생했습니다.' }
   }
 }
@@ -137,11 +144,11 @@ export const getCurrentUser = async (): Promise<AuthUser | null> => {
       .single()
 
     if (error) {
-      console.error('Profile fetch error:', error)
+      authLogger.error('Profile fetch error:', error.message)
       
       // 사용자가 users 테이블에 없으면 생성
       if (error.code === 'PGRST116') {
-        console.log('사용자가 users 테이블에 없습니다. 새로 생성합니다.')
+        authLogger.log('사용자가 users 테이블에 없습니다. 새로 생성합니다.')
         
         const { data: newUser, error: insertError } = await supabase
           .from('users')
@@ -157,7 +164,7 @@ export const getCurrentUser = async (): Promise<AuthUser | null> => {
           .single()
 
         if (insertError) {
-          console.error('사용자 생성 실패:', insertError)
+          authLogger.error('사용자 생성 실패:', insertError.message)
           return null
         }
 
@@ -169,7 +176,7 @@ export const getCurrentUser = async (): Promise<AuthUser | null> => {
 
     return userProfile
   } catch (error) {
-    console.error('Get current user error:', error)
+    authLogger.error('Get current user error:', error)
     return null
   }
 }

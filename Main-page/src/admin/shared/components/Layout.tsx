@@ -60,7 +60,7 @@ const Layout = ({ children, userRole }: LayoutProps) => {
     const commonItems = [
       { path: '/admin', icon: Home, label: '대시보드' },
       { path: '/admin/orders', icon: ShoppingCart, label: '주문 관리' },
-      { path: '/admin/settlements', icon: DollarSign, label: '정산 관리' },
+      { path: '/admin/settlements', icon: DollarSign, label: '정산 관리(미구현)' },
       { path: '/admin/statistics', icon: BarChart3, label: '통계 분석' },
       { path: '/admin/settings', icon: Settings, label: '시스템 설정' },
     ];

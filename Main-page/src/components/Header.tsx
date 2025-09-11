@@ -10,7 +10,6 @@ const Header: React.FC = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [activeCategory, setActiveCategory] = useState<any>(null)
   const [activeSubcategory, setActiveSubcategory] = useState<any>(null)
-  const [currentUser, setCurrentUser] = useState<any>(null)
   const [categories, setCategories] = useState<any[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [suggestions, setSuggestions] = useState<string[]>([])
@@ -20,7 +19,7 @@ const Header: React.FC = () => {
   
   const { getCartItemCount } = useCartContext()
   const location = useLocation()
-  const { currentUser: contextUser, refreshUser } = useUser()
+  const { currentUser, setCurrentUser } = useUser()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
 
@@ -28,10 +27,8 @@ const Header: React.FC = () => {
   const hideTopHeaderPages = ['/login', '/signup', '/forgot-password']
   const shouldHideTopHeader = hideTopHeaderPages.includes(location.pathname)
 
-  // 로그인 상태 확인 및 카테고리 로드
+  // 카테고리 로드
   useEffect(() => {
-    setCurrentUser(contextUser)
-    
     // 카테고리 데이터 로드
     const loadCategories = async () => {
       const categoryData = await getCategoriesHierarchy()
@@ -44,7 +41,7 @@ const Header: React.FC = () => {
       }
     }
     loadCategories()
-  }, [contextUser, location.pathname])
+  }, [location.pathname])
 
   // 인기 검색어 로드
   useEffect(() => {
@@ -95,12 +92,11 @@ const Header: React.FC = () => {
     }
   }
 
-  // 로그아웃 함수 (로컬스토리지 관련 코드 삭제)
+  // 로그아웃 함수
   const handleLogout = async () => {
     try {
       await logout()
       setCurrentUser(null)
-      // localStorage.removeItem('currentUser') 삭제
       alert('로그아웃되었습니다.')
       window.location.href = '/'
     } catch (error) {
