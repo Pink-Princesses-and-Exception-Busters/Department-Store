@@ -62,7 +62,7 @@ const Layout = ({ children, userRole }: LayoutProps) => {
       { path: '/admin/orders', icon: ShoppingCart, label: '주문 관리' },
       { path: '/admin/settlements', icon: DollarSign, label: '정산 관리(미구현)' },
       { path: '/admin/statistics', icon: BarChart3, label: '통계 분석' },
-      { path: '/admin/settings', icon: Settings, label: '시스템 설정' },
+      { path: '/admin/settings', icon: Settings, label: '시스템 설정(카테고리 설정 외 미구현)' },
     ];
 
     if (userRole === 'admin' || userRole === 'hq') {

@@ -18,6 +18,7 @@ import {
   Image
 } from 'lucide-react';
 import { supabase, getProducts } from '../../shared/lib/supabase';
+import Modal from '../../shared/components/Modal';
 
 const ProductManagement = () => {
   const navigate = useNavigate();
@@ -39,6 +40,10 @@ const ProductManagement = () => {
     totalStock: 0,
     totalSales: 0
   });
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', price: 0, status: 'forsale', stock: 0 });
 
   // 상품 데이터 및 카테고리 데이터 로드
   useEffect(() => {
@@ -160,6 +165,74 @@ const ProductManagement = () => {
       setError('데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 상세보기/수정/삭제 핸들러
+  const handleViewProduct = (product) => {
+    setSelectedProduct(product);
+    setEditMode(false);
+    setEditForm({
+      name: product.name || '',
+      price: product.price || 0,
+      status: product.status || 'forsale',
+      stock: product.stock || 0
+    });
+    setShowDetailModal(true);
+  };
+
+  const handleEditProduct = (product) => {
+    setSelectedProduct(product);
+    setEditMode(true);
+    setEditForm({
+      name: product.name || '',
+      price: product.price || 0,
+      status: product.status || 'forsale',
+      stock: product.stock || 0
+    });
+    setShowDetailModal(true);
+  };
+
+  const handleDeleteProduct = async (product) => {
+    const confirmDelete = window.confirm(`정말로 상품 [${product.name}]을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`);
+    if (!confirmDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', product.id);
+      if (error) throw error;
+
+      await loadData();
+      alert('상품이 삭제되었습니다.');
+    } catch (err) {
+      console.error('상품 삭제 오류:', err);
+      alert('상품 삭제 중 오류가 발생했습니다.');
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!selectedProduct) return;
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({
+          name: editForm.name,
+          price: Number(editForm.price) || 0,
+          status: editForm.status,
+          stock: Number(editForm.stock) || 0,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', selectedProduct.id);
+      if (error) throw error;
+
+      setShowDetailModal(false);
+      await loadData();
+      alert('상품 정보가 업데이트되었습니다.');
+    } catch (err) {
+      console.error('상품 수정 오류:', err);
+      alert('상품 수정 중 오류가 발생했습니다.');
     }
   };
 
@@ -661,10 +734,11 @@ const ProductManagement = () => {
                           style={{ 
                             background: '#007bff', 
                             color: 'white', 
-                            border: 'none',
+                            border: 'none', 
                             padding: '0.25rem 0.5rem'
                           }}
                           title="상세보기"
+                          onClick={() => handleViewProduct(product)}
                         >
                           <Eye size={14} />
                         </button>
@@ -673,10 +747,11 @@ const ProductManagement = () => {
                           style={{ 
                             background: '#28a745', 
                             color: 'white', 
-                            border: 'none',
+                            border: 'none', 
                             padding: '0.25rem 0.5rem'
                           }}
                           title="수정"
+                          onClick={() => handleEditProduct(product)}
                         >
                           <Edit size={14} />
                         </button>
@@ -685,10 +760,11 @@ const ProductManagement = () => {
                           style={{ 
                             background: '#dc3545', 
                             color: 'white', 
-                            border: 'none',
+                            border: 'none', 
                             padding: '0.25rem 0.5rem'
                           }}
                           title="삭제"
+                          onClick={() => handleDeleteProduct(product)}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -701,6 +777,255 @@ const ProductManagement = () => {
           )}
         </div>
       </div>
+
+      {/* 상세/수정 모달 */}
+      <Modal 
+        isOpen={showDetailModal}
+        onClose={() => setShowDetailModal(false)}
+        title={editMode ? '상품 정보 수정' : '상품 상세 보기'}
+        size="lg"
+      >
+        {selectedProduct && (
+          <div className="space-y-4">
+            {!editMode ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <div 
+                    style={{
+                      width: '120px',
+                      height: '120px',
+                      background: '#f8f9fa',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      overflow: 'hidden',
+                      border: '1px solid #e9ecef'
+                    }}
+                  >
+                    {selectedProduct.image_urls && selectedProduct.image_urls.length > 0 ? (
+                      <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                        <img
+                          src={selectedProduct.image_urls[0]}
+                          alt={selectedProduct.name}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => window.open(selectedProduct.image_urls[0], '_blank')}
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            if (e.target.nextSibling) {
+                              e.target.nextSibling.style.display = 'flex';
+                            }
+                          }}
+                        />
+                        {selectedProduct.image_urls.length > 1 && (
+                          <div style={{
+                            position: 'absolute',
+                            top: '4px',
+                            right: '4px',
+                            background: 'rgba(0, 0, 0, 0.7)',
+                            color: 'white',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: '600'
+                          }}>
+                            +{selectedProduct.image_urls.length - 1}
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                    <div style={{ 
+                      display: (selectedProduct.image_urls && selectedProduct.image_urls.length > 0) ? 'none' : 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '100%',
+                      height: '100%'
+                    }}>
+                      <Package size={32} color="#666" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, marginBottom: '0.5rem' }}>{selectedProduct.name}</h3>
+                    <span className={`badge ${getProductStatusBadge(selectedProduct.status)}`}>
+                      {getProductStatusText(selectedProduct.status)}
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#666' }}>
+                      상품 ID
+                    </label>
+                    <p style={{ margin: 0 }}>{selectedProduct.id}</p>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#666' }}>
+                      브랜드
+                    </label>
+                    <p style={{ margin: 0 }}>{selectedProduct.brand || '-'}</p>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#666' }}>
+                      카테고리
+                    </label>
+                    <p style={{ margin: 0 }}>{getCategoryName(selectedProduct.category_id)}</p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#666' }}>
+                      가격
+                    </label>
+                    <p style={{ margin: 0, fontWeight: '600', fontSize: '1.125rem', color: '#007bff' }}>
+                      ₩{(selectedProduct.price || 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#666' }}>
+                      재고
+                    </label>
+                    <p style={{ 
+                      margin: 0, 
+                      fontWeight: '600',
+                      color: selectedProduct.stock === 0 ? '#dc3545' : selectedProduct.stock < 50 ? '#ffc107' : '#28a745'
+                    }}>
+                      {selectedProduct.stock || 0}개
+                    </p>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#666' }}>
+                      판매량
+                    </label>
+                    <p style={{ margin: 0, fontWeight: '600' }}>{selectedProduct.sales || 0}개</p>
+                  </div>
+                </div>
+
+                {selectedProduct.description && (
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#666' }}>
+                      상품 설명
+                    </label>
+                    <p style={{ margin: 0, lineHeight: '1.5' }}>{selectedProduct.description}</p>
+                  </div>
+                )}
+
+                {selectedProduct.image_urls && selectedProduct.image_urls.length > 1 && (
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '600', color: '#666' }}>
+                      추가 이미지들 ({selectedProduct.image_urls.length - 1}개)
+                    </label>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+                      gap: '8px'
+                    }}>
+                      {selectedProduct.image_urls.slice(1).map((url, index) => (
+                        <img
+                          key={index}
+                          src={url}
+                          alt={`${selectedProduct.name} ${index + 2}`}
+                          style={{
+                            width: '100%',
+                            height: '80px',
+                            objectFit: 'cover',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            border: '1px solid #e9ecef'
+                          }}
+                          onClick={() => window.open(url, '_blank')}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', justifyContent: 'flex-end' }}>
+                  <button 
+                    className="btn btn-primary"
+                    onClick={() => setEditMode(true)}
+                  >
+                    수정
+                  </button>
+                  <button 
+                    className="btn" 
+                    style={{ background: '#6c757d', color: 'white' }}
+                    onClick={() => setShowDetailModal(false)}
+                  >
+                    닫기
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: '#374151', fontWeight: 600 }}>상품명</span>
+                    <input 
+                      type="text" 
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: '8px' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: '#374151', fontWeight: 600 }}>가격(원)</span>
+                    <input 
+                      type="number" 
+                      value={editForm.price}
+                      onChange={(e) => setEditForm({ ...editForm, price: e.target.value })}
+                      style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: '8px' }}
+                    />
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: '#374151', fontWeight: 600 }}>상태</span>
+                    <select 
+                      value={editForm.status}
+                      onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                      style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: '8px' }}
+                    >
+                      <option value="forsale">판매중</option>
+                      <option value="soldout">품절</option>
+                      <option value="hidden">숨김</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '12px', color: '#374151', fontWeight: 600 }}>재고(개)</span>
+                    <input 
+                      type="number" 
+                      value={editForm.stock}
+                      onChange={(e) => setEditForm({ ...editForm, stock: e.target.value })}
+                      style={{ border: '1px solid #d1d5db', borderRadius: 8, padding: '8px' }}
+                    />
+                  </label>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
+                  <button 
+                    className="btn"
+                    style={{ background: '#111827', color: 'white', border: 'none', padding: '0.5rem 0.75rem' }}
+                    onClick={() => setEditMode(false)}
+                  >
+                    취소
+                  </button>
+                  <button 
+                    className="btn"
+                    style={{ background: '#2563eb', color: 'white', border: 'none', padding: '0.5rem 0.75rem' }}
+                    onClick={handleSaveEdit}
+                  >
+                    저장
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
