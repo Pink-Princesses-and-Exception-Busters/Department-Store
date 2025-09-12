@@ -8,7 +8,8 @@ import {
   XCircle,
   Building2,
   RefreshCw,
-  Loader
+  Loader,
+  X
 } from 'lucide-react';
 import Modal from '../../shared/components/Modal';
 import { supabase } from '../../shared/lib/supabase';
@@ -18,7 +19,9 @@ const Tenants = () => {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState(null);
+  const [tenantToTerminate, setTenantToTerminate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -281,7 +284,70 @@ const Tenants = () => {
   // 입점사 상세 정보 보기
   const handleViewTenant = (tenant) => {
     setSelectedTenant(tenant);
-    setShowDetailModal(true);
+    // selectedTenant가 설정된 후 모달 열기
+    setTimeout(() => {
+      setShowDetailModal(true);
+    }, 0);
+  };
+
+  // 계약 종료 확인
+  const handleTerminateConfirm = (tenant) => {
+    setTenantToTerminate(tenant);
+    setShowTerminateModal(true);
+  };
+
+  // 계약 종료 실행
+  const handleTerminateTenant = async () => {
+    if (!tenantToTerminate) return;
+
+    try {
+      // 1. 입점사 상태를 'terminated'로 변경
+      const { error: brandError } = await supabase
+        .from('brand_admins')
+        .update({ 
+          status: 'terminated',
+          terminated_at: new Date().toISOString()
+        })
+        .eq('id', tenantToTerminate.id);
+
+      if (brandError) {
+        throw brandError;
+      }
+
+      // 2. 해당 브랜드의 모든 상품을 'hidden' 상태로 변경 (숨김)
+      const { error: productError } = await supabase
+        .from('products')
+        .update({ 
+          status: 'hidden',
+          updated_at: new Date().toISOString()
+        })
+        .eq('brand', tenantToTerminate.companyName);
+
+      if (productError) {
+        console.warn('상품 상태 업데이트 실패:', productError);
+        // 상품 업데이트 실패해도 계약 종료는 진행
+      }
+
+      // 로컬 상태 업데이트
+      setTenants(tenants.map(tenant => 
+        tenant.id === tenantToTerminate.id ? { 
+          ...tenant, 
+          status: '계약종료',
+          originalStatus: 'terminated',
+          terminatedAt: new Date().toISOString()
+        } : tenant
+      ));
+      
+      setShowTerminateModal(false);
+      setTenantToTerminate(null);
+      
+      // 성공 메시지에 상품 숨김 정보 포함
+      alert(`'${tenantToTerminate.companyName}'의 계약이 종료되었습니다.\n해당 브랜드의 모든 상품이 숨김 처리되었습니다.`);
+      
+    } catch (err) {
+      console.error('계약 종료 오류:', err);
+      alert('계약 종료 중 오류가 발생했습니다.');
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -373,29 +439,128 @@ const Tenants = () => {
       )}
 
       {/* 검색 및 필터 */}
-      <div className="search-filter-bar">
-        <div className="search-box">
-          <Search size={16} />
-          <input
-            type="text"
-            placeholder="입점사명, 대표자명, 이메일로 검색..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="card" style={{ marginTop: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 style={{ margin: 0 }}>검색 및 필터</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#666', fontSize: '0.9rem' }}>
+            <span>총 {filteredTenants.length}개 결과</span>
+          </div>
         </div>
         
-        <div className="filter-group">
-          <Filter size={16} />
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-          >
-            {statusOptions.map(option => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* 검색 박스 */}
+          <div style={{ 
+            position: 'relative', 
+            flex: '1', 
+            minWidth: '300px',
+            maxWidth: '400px'
+          }}>
+            <div style={{
+              position: 'absolute',
+              left: '0.75rem',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: '#6b7280',
+              zIndex: 1
+            }}>
+              <Search size={16} />
+            </div>
+            <input
+              type="text"
+              placeholder="입점사명, 대표자명, 이메일로 검색..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.75rem 0.75rem 0.75rem 2.5rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '8px',
+                fontSize: '0.875rem',
+                backgroundColor: '#fff',
+                transition: 'all 0.2s ease',
+                outline: 'none'
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = '#3b82f6';
+                e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = '#d1d5db';
+                e.target.style.boxShadow = 'none';
+              }}
+            />
+          </div>
+          
+          {/* 상태 필터 */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.5rem',
+            minWidth: '200px'
+          }}>
+            <Filter size={16} style={{ color: '#6b7280' }} />
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              style={{
+                flex: 1,
+                padding: '0.75rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '8px',
+                fontSize: '0.875rem',
+                backgroundColor: '#fff',
+                cursor: 'pointer',
+                outline: 'none',
+                transition: 'all 0.2s ease'
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = '#3b82f6';
+                e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = '#d1d5db';
+                e.target.style.boxShadow = 'none';
+              }}
+            >
+              {statusOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          {/* 검색 초기화 버튼 */}
+          {(searchTerm || selectedStatus !== 'all') && (
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setSelectedStatus('all');
+              }}
+              style={{
+                padding: '0.75rem 1rem',
+                backgroundColor: '#f3f4f6',
+                border: '1px solid #d1d5db',
+                borderRadius: '8px',
+                fontSize: '0.875rem',
+                color: '#374151',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = '#e5e7eb';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = '#f3f4f6';
+              }}
+            >
+              <XCircle size={14} />
+              초기화
+            </button>
+          )}
         </div>
       </div>
 
@@ -513,6 +678,20 @@ const Tenants = () => {
                           <CheckCircle size={14} />
                         </button>
                       )}
+                      {(tenant.status === '승인됨' || tenant.status === '일시정지') && (
+                        <button
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleTerminateConfirm(tenant)}
+                          title="계약 종료"
+                          style={{
+                            backgroundColor: '#dc3545',
+                            color: 'white',
+                            border: '1px solid #dc3545'
+                          }}
+                        >
+                          <XCircle size={14} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -610,114 +789,349 @@ const Tenants = () => {
       </Modal>
 
       {/* 입점사 상세 정보 모달 */}
-      <Modal
-        isOpen={showDetailModal}
-        onClose={() => setShowDetailModal(false)}
-        title="입점사 상세 정보"
-      >
-        {selectedTenant && (
-          <div className="tenant-details">
-            <div className="detail-section">
-              <h3>기본 정보</h3>
-              <div className="detail-grid">
-                <div className="detail-item">
-                  <label>회사명</label>
-                  <span>{selectedTenant.companyName}</span>
-                </div>
-                <div className="detail-item">
-                  <label>등급</label>
-                  <span style={{ 
-                    fontWeight: '600',
-                    color: selectedTenant.grade === 1 ? '#dc3545' : selectedTenant.grade === 2 ? '#ffc107' : '#28a745'
-                  }}>
-                    {selectedTenant.grade}등급
-                  </span>
-                </div>
-                <div className="detail-item">
-                  <label>이메일</label>
-                  <span>{selectedTenant.email}</span>
-                </div>
-                <div className="detail-item">
-                  <label>전화번호</label>
-                  <span>{selectedTenant.phone}</span>
-                </div>
-                <div className="detail-item">
-                  <label>사업자등록번호</label>
-                  <span>{selectedTenant.businessNumber}</span>
-                </div>
-                <div className="detail-item">
-                  <label>등록된 상품 수</label>
-                  <span style={{ 
-                    fontWeight: '600',
-                    color: selectedTenant.productCount > 10 ? '#28a745' : selectedTenant.productCount > 0 ? '#ffc107' : '#6c757d'
-                  }}>
-                    {selectedTenant.productCount.toLocaleString()}개
-                  </span>
-                </div>
-                <div className="detail-item">
-                  <label>주소</label>
-                  <span>{selectedTenant.address}</span>
-                </div>
-                <div className="detail-item">
-                  <label>입점일</label>
-                  <span>{selectedTenant.joinDate}</span>
-                </div>
-                <div className="detail-item">
-                  <label>상태</label>
-                  <span className={`badge ${getStatusBadge(selectedTenant.status)}`}>
-                    {selectedTenant.status}
-                  </span>
-                </div>
-                <div className="detail-item">
-                  <label>로고</label>
-                  <div>
-                    {selectedTenant.logoUrl ? (
-                      <img 
-                        src={selectedTenant.logoUrl} 
-                        alt={`${selectedTenant.companyName} 로고`}
-                        style={{
-                          width: '60px',
-                          height: '60px',
-                          objectFit: 'cover',
-                          borderRadius: '8px',
-                          border: '1px solid #e5e7eb'
-                        }}
-                      />
-                    ) : (
-                      <div style={{
-                        width: '60px',
-                        height: '60px',
-                        background: '#f3f4f6',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: '1px solid #e5e7eb'
+      {showDetailModal && selectedTenant && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            width: '90%',
+            maxWidth: '800px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)'
+          }}>
+            {/* 고정 헤더 */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderBottom: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: '#f9fafb',
+              borderRadius: '8px 8px 0 0'
+            }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600', color: '#1f2937' }}>
+                입점사 상세 정보
+              </h2>
+              <button
+                onClick={() => setShowDetailModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  color: '#6b7280',
+                  padding: '0.25rem',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#f3f4f6'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* 스크롤 가능한 콘텐츠 영역 */}
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '1.5rem'
+            }}>
+              <div className="tenant-details">
+                <div className="detail-section">
+                  <h3>기본 정보</h3>
+                  <div className="detail-grid">
+                    <div className="detail-item">
+                      <label>회사명</label>
+                      <span>{selectedTenant.companyName}</span>
+                    </div>
+                    <div className="detail-item">
+                      <label>등급</label>
+                      <span style={{ 
+                        fontWeight: '600',
+                        color: selectedTenant.grade === 1 ? '#dc3545' : selectedTenant.grade === 2 ? '#ffc107' : '#28a745'
                       }}>
-                        <Building2 size={24} color="#9ca3af" />
+                        {selectedTenant.grade}등급
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <label>이메일</label>
+                      <span>{selectedTenant.email}</span>
+                    </div>
+                    <div className="detail-item">
+                      <label>전화번호</label>
+                      <span>{selectedTenant.phone}</span>
+                    </div>
+                    <div className="detail-item">
+                      <label>사업자등록번호</label>
+                      <span>{selectedTenant.businessNumber}</span>
+                    </div>
+                    <div className="detail-item">
+                      <label>등록된 상품 수</label>
+                      <span style={{ 
+                        fontWeight: '600',
+                        color: selectedTenant.productCount > 10 ? '#28a745' : selectedTenant.productCount > 0 ? '#ffc107' : '#6c757d'
+                      }}>
+                        {selectedTenant.productCount.toLocaleString()}개
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <label>주소</label>
+                      <span>{selectedTenant.address}</span>
+                    </div>
+                    <div className="detail-item">
+                      <label>입점일</label>
+                      <span>{selectedTenant.joinDate}</span>
+                    </div>
+                    <div className="detail-item">
+                      <label>상태</label>
+                      <span className={`badge ${getStatusBadge(selectedTenant.status)}`}>
+                        {selectedTenant.status}
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <label>로고</label>
+                      <div>
+                        {selectedTenant.logoUrl ? (
+                          <img 
+                            src={selectedTenant.logoUrl} 
+                            alt={`${selectedTenant.companyName} 로고`}
+                            style={{
+                              width: '60px',
+                              height: '60px',
+                              objectFit: 'cover',
+                              borderRadius: '8px',
+                              border: '1px solid #e5e7eb'
+                            }}
+                          />
+                        ) : (
+                          <div style={{
+                            width: '60px',
+                            height: '60px',
+                            background: '#f3f4f6',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid #e5e7eb'
+                          }}>
+                            <Building2 size={24} color="#9ca3af" />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
+                    <div className="detail-item">
+                      <label>수수료율</label>
+                      <span>{selectedTenant.commission}%</span>
+                    </div>
                   </div>
                 </div>
-                <div className="detail-item">
-                  <label>수수료율</label>
-                  <span>{selectedTenant.commission}%</span>
+                
+                <div className="detail-section">
+                  <h3>업체 설명</h3>
+                  <p>{selectedTenant.description}</p>
                 </div>
               </div>
             </div>
-            
-            <div className="detail-section">
-              <h3>업체 설명</h3>
-              <p>{selectedTenant.description}</p>
+
+            {/* 고정 푸터 */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid #e5e7eb',
+              backgroundColor: '#f9fafb',
+              borderRadius: '0 0 8px 8px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {/* 상태 변경 버튼들 */}
+                {selectedTenant && selectedTenant.status === '승인됨' && (
+                  <button
+                    className="btn btn-warning"
+                    onClick={() => {
+                      setShowDetailModal(false);
+                      handleStatusChange(selectedTenant.id, '일시정지');
+                    }}
+                    title="일시정지"
+                  >
+                    <XCircle size={14} /> 일시정지
+                  </button>
+                )}
+                {selectedTenant && selectedTenant.status === '일시정지' && (
+                  <button
+                    className="btn btn-success"
+                    onClick={() => {
+                      setShowDetailModal(false);
+                      handleStatusChange(selectedTenant.id, '승인됨');
+                    }}
+                    title="활성화"
+                  >
+                    <CheckCircle size={14} /> 활성화
+                  </button>
+                )}
+                {selectedTenant && (selectedTenant.status === '승인됨' || selectedTenant.status === '일시정지') && (
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => {
+                      setShowDetailModal(false);
+                      handleTerminateConfirm(selectedTenant);
+                    }}
+                    title="계약 종료"
+                    style={{
+                      backgroundColor: '#dc3545',
+                      color: 'white',
+                      border: '1px solid #dc3545'
+                    }}
+                  >
+                    <XCircle size={14} /> 계약 종료
+                  </button>
+                )}
+              </div>
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setShowDetailModal(false)}
+                style={{
+                  backgroundColor: '#6c757d',
+                  color: 'white',
+                  border: '1px solid #6c757d',
+                  padding: '0.5rem 1rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 계약 종료 확인 모달 */}
+      <Modal
+        isOpen={showTerminateModal}
+        onClose={() => {
+          setShowTerminateModal(false);
+          setTenantToTerminate(null);
+        }}
+        title="계약 종료 확인"
+      >
+        {tenantToTerminate && (
+          <div>
+            <div style={{
+              padding: '1rem',
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '8px',
+              marginBottom: '1.5rem'
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                color: '#dc2626',
+                fontWeight: '600',
+                marginBottom: '0.5rem'
+              }}>
+                <XCircle size={20} />
+                <span>경고</span>
+              </div>
+              <p style={{ margin: 0, color: '#7f1d1d', fontSize: '0.9rem' }}>
+                이 작업은 되돌릴 수 없습니다. 계약 종료 후에는 입점사가 더 이상 서비스를 이용할 수 없습니다.
+              </p>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h4 style={{ margin: '0 0 1rem 0', color: '#374151' }}>계약 종료 대상</h4>
+              <div style={{
+                padding: '1rem',
+                backgroundColor: '#f9fafb',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: '600', fontSize: '1.1rem', color: '#1f2937' }}>
+                      {tenantToTerminate.companyName}
+                    </div>
+                    <div style={{ color: '#6b7280', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+                      {tenantToTerminate.email}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ 
+                      color: '#6b7280', 
+                      fontSize: '0.9rem',
+                      marginBottom: '0.25rem'
+                    }}>
+                      현재 상태
+                    </div>
+                    <span className={`badge ${getStatusBadge(tenantToTerminate.status)}`}>
+                      {tenantToTerminate.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{
+              padding: '1rem',
+              backgroundColor: '#fef3c7',
+              border: '1px solid #f59e0b',
+              borderRadius: '8px',
+              marginBottom: '1.5rem'
+            }}>
+              <h5 style={{ margin: '0 0 0.5rem 0', color: '#92400e' }}>계약 종료 시 영향</h5>
+              <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#92400e', fontSize: '0.9rem' }}>
+                <li>입점사 계정이 비활성화됩니다</li>
+                <li><strong>등록된 모든 상품이 '숨김' 상태로 변경됩니다</strong></li>
+                <li>재고가 있어도 상품이 고객에게 노출되지 않습니다</li>
+                <li>새로운 주문을 받을 수 없습니다</li>
+                <li>기존 주문은 처리 완료까지 유지됩니다</li>
+                <li>필요시 관리자가 상품을 다시 활성화할 수 있습니다</li>
+                <li>이 작업은 되돌릴 수 없습니다</li>
+              </ul>
+            </div>
+
+            <div className="modal-actions">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  setShowTerminateModal(false);
+                  setTenantToTerminate(null);
+                }}
+              >
+                취소
+              </button>
+              <button 
+                className="btn btn-danger" 
+                onClick={handleTerminateTenant}
+                style={{
+                  backgroundColor: '#dc3545',
+                  borderColor: '#dc3545',
+                  color: 'white'
+                }}
+              >
+                계약 종료
+              </button>
             </div>
           </div>
         )}
-        
-        <div className="modal-actions">
-          <button className="btn btn-secondary" onClick={() => setShowDetailModal(false)}>
-            닫기
-          </button>
-        </div>
       </Modal>
     </div>
   );

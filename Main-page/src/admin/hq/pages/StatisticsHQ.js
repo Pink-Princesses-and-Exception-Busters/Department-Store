@@ -11,11 +11,43 @@ import {
   Activity,
   PieChart,
   RefreshCw,
-  Loader
+  Loader,
+  X,
+  XCircle
 } from 'lucide-react';
 import Modal from '../../shared/components/Modal';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../shared/lib/supabase';
+
+// CSS 스타일 추가
+const tenantCardStyles = `
+  .tenant-card {
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
+  }
+  
+  .tenant-card:hover {
+    background-color: #e0f2fe !important;
+    border-color: #3b82f6 !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15) !important;
+  }
+  
+  .tenant-card:hover > div {
+    background-color: #e0f2fe !important;
+    transition: none !important;
+  }
+  
+  .tenant-card > div {
+    transition: none !important;
+  }
+`;
+
+// 스타일을 DOM에 추가
+if (typeof document !== 'undefined') {
+  const styleElement = document.createElement('style');
+  styleElement.textContent = tenantCardStyles;
+  document.head.appendChild(styleElement);
+}
 
 
 const StatisticsHQ = () => {
@@ -24,6 +56,13 @@ const StatisticsHQ = () => {
   const [selectedCategory, setSelectedCategory] = useState('tenants');
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportType, setReportType] = useState('');
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailModalType, setDetailModalType] = useState('');
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalData, setModalData] = useState(null);
+  const [showTenantDetailModal, setShowTenantDetailModal] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState(null);
+  const [tenantDetailLoading, setTenantDetailLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -403,6 +442,236 @@ const StatisticsHQ = () => {
       console.error('성과 지표 계산 오류:', err);
       return [];
     }
+  };
+
+  // 모달용 상세 데이터 로드 함수
+  const loadModalData = async (type) => {
+    try {
+      setModalLoading(true);
+      console.log(`${type} 모달 데이터 로드 시작...`);
+
+      if (type === 'tenants') {
+        // 모든 입점사 데이터 조회
+        const { data: tenants, error: tenantsError } = await supabase
+          .from('brand_admins')
+          .select('*')
+          .eq('status', 'active')
+          .order('joined_at', { ascending: false });
+
+        if (tenantsError) {
+          console.error('입점사 데이터 조회 실패:', tenantsError);
+          throw tenantsError;
+        }
+
+        console.log('입점사 데이터:', tenants?.length || 0, '개');
+
+        // 주문 데이터 조회 (매출 계산용)
+        const { data: orders, error: ordersError } = await supabase
+          .from('orders')
+          .select('items, total_amount, order_date, status')
+          .in('status', ['배송완료', '결제완료', '상품준비', '배송중']);
+
+        if (ordersError) {
+          console.error('주문 데이터 조회 실패:', ordersError);
+        }
+
+        console.log('주문 데이터:', orders?.length || 0, '개');
+
+        // 상품 데이터 조회 (상품 수 계산용)
+        const { data: products, error: productsError } = await supabase
+          .from('products')
+          .select('brand, status, price, sales')
+          .eq('status', 'forsale');
+
+        if (productsError) {
+          console.error('상품 데이터 조회 실패:', productsError);
+        }
+
+        console.log('상품 데이터:', products?.length || 0, '개');
+
+        // 입점사별 매출 계산 (공통 함수 사용)
+        const tenantSales = {};
+        const tenantOrderCounts = {};
+        if (orders) {
+          tenants.forEach(tenant => {
+            const { totalSales, orderCount } = calculateBrandSales(orders, tenant.name);
+            tenantSales[tenant.name] = totalSales;
+            tenantOrderCounts[tenant.name] = orderCount;
+          });
+        }
+
+        // 입점사별 상품 수 계산
+        const tenantProducts = {};
+        if (products) {
+          products.forEach(product => {
+            if (product.brand) {
+              tenantProducts[product.brand] = (tenantProducts[product.brand] || 0) + 1;
+            }
+          });
+        }
+
+        // 입점사 데이터 가공
+        const processedTenants = tenants.map(tenant => {
+          const sales = tenantSales[tenant.name] || 0;
+          const productCount = tenantProducts[tenant.name] || 0;
+          const orderCount = tenantOrderCounts[tenant.name] || 0;
+          const satisfaction = 4.0 + Math.random() * 0.8; // 임시 만족도
+          const growth = Math.random() * 30 - 5; // -5% ~ +25% 성장률
+
+          return {
+            id: tenant.id,
+            name: tenant.name,
+            email: tenant.email,
+            business_number: tenant.business_number,
+            joined_at: tenant.joined_at,
+            sales: sales,
+            products: productCount,
+            orderCount: orderCount,
+            satisfaction: satisfaction,
+            growth: growth
+          };
+        }).sort((a, b) => b.sales - a.sales); // 매출 순으로 정렬
+
+        setModalData({
+          type: 'tenants',
+          data: processedTenants,
+          totalCount: processedTenants.length,
+          totalSales: processedTenants.reduce((sum, tenant) => sum + tenant.sales, 0)
+        });
+
+      } else if (type === 'sales') {
+        // 매출 관련 데이터는 기존 mock 데이터 사용
+        setModalData({
+          type: 'sales',
+          data: currentCategory.details
+        });
+      }
+
+      console.log('모달 데이터 로드 완료:', modalData);
+    } catch (error) {
+      console.error('모달 데이터 로드 실패:', error);
+      setModalData(null);
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  // 브랜드별 매출 계산 공통 함수
+  const calculateBrandSales = (orders, brandName) => {
+    let totalSales = 0;
+    let orderCount = 0;
+    
+    // 매출에 포함할 주문 상태들
+    const validStatuses = ['배송완료', '결제완료', '상품준비', '배송중'];
+    
+    if (orders) {
+      orders.forEach(order => {
+        // 주문 상태가 유효한 경우만 계산
+        if (validStatuses.includes(order.status)) {
+          if (order.items && Array.isArray(order.items)) {
+            order.items.forEach(item => {
+              if (item.brand === brandName) {
+                totalSales += (item.price * item.quantity);
+                orderCount += 1;
+              }
+            });
+          }
+        }
+      });
+    }
+    
+    return { totalSales, orderCount };
+  };
+
+  // 입점사 클릭 핸들러
+  const handleTenantClick = async (tenant) => {
+    setTenantDetailLoading(true);
+    try {
+      // 실제 DB에서 입점사 정보 조회
+      const { data: tenantData, error: tenantError } = await supabase
+        .from('brand_admins')
+        .select('*')
+        .eq('id', tenant.id)
+        .single();
+
+      if (tenantError) {
+        console.error('입점사 정보 조회 오류:', tenantError);
+        alert('입점사 정보를 불러오는 중 오류가 발생했습니다.');
+        return;
+      }
+
+      // 상품 수 조회
+      const { data: products, error: productsError } = await supabase
+        .from('products')
+        .select('id')
+        .eq('brand', tenantData.name);
+
+      if (productsError) {
+        console.error('상품 수 조회 오류:', productsError);
+      }
+
+      // 주문 데이터 조회 (매출 계산용)
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders')
+        .select('*');
+
+      if (ordersError) {
+        console.error('주문 데이터 조회 오류:', ordersError);
+      }
+
+      // 매출 계산 (공통 함수 사용)
+      const { totalSales, orderCount } = calculateBrandSales(orders, tenantData.name);
+
+      // 통합된 입점사 데이터 생성
+      const fullTenantData = {
+        id: tenantData.id,
+        name: tenantData.name,
+        companyName: tenantData.name,
+        email: tenantData.email,
+        phone: tenantData.phone,
+        businessNumber: tenantData.business_number,
+        address: tenantData.address,
+        grade: tenantData.grade || 1,
+        status: tenantData.status === 'active' ? '승인됨' : 
+               tenantData.status === 'suspended' ? '일시정지' : 
+               tenantData.status === 'terminated' ? '계약종료' : '승인대기',
+        originalStatus: tenantData.status,
+        joinDate: new Date(tenantData.joined_at).toLocaleDateString(),
+        joined_at: tenantData.joined_at,
+        terminatedAt: tenantData.terminated_at,
+        logoUrl: tenantData.logo_url,
+        commission: tenantData.grade === 1 ? 5.0 : tenantData.grade === 2 ? 4.0 : 3.0,
+        productCount: products ? products.length : 0,
+        products: products ? products.length : 0,
+        totalSales: totalSales,
+        sales: totalSales,
+        orderCount: orderCount,
+        description: tenantData.description || '',
+        // 모달에서 가져온 추가 데이터 (성장률, 만족도는 샘플 데이터)
+        growth: tenant.growth || 0,
+        satisfaction: tenant.satisfaction || 0
+      };
+
+      setSelectedTenant(fullTenantData);
+      setShowTenantDetailModal(true);
+      
+    } catch (error) {
+      console.error('입점사 정보 로드 오류:', error);
+      alert('입점사 정보를 불러오는 중 오류가 발생했습니다.');
+    } finally {
+      setTenantDetailLoading(false);
+    }
+  };
+
+  // 상태 배지 스타일 함수
+  const getStatusBadge = (status) => {
+    const statusMap = {
+      '승인대기': 'badge-warning',
+      '승인됨': 'badge-success',
+      '일시정지': 'badge-warning',
+      '계약종료': 'badge-danger'
+    };
+    return statusMap[status] || 'badge-secondary';
   };
 
   // 카테고리별 통계 데이터 (실시간 데이터)
@@ -838,13 +1107,17 @@ const StatisticsHQ = () => {
                   padding: '0.25rem 0.75rem',
                   fontSize: '0.75rem'
                 }}
-                onClick={() => {
+                onClick={async () => {
                   if (selectedCategory === 'tenants') {
-                    navigate('/tenant-statistics');
+                    setDetailModalType('tenants');
+                    await loadModalData('tenants');
+                    setShowDetailModal(true);
                   } else if (selectedCategory === 'products') {
                     navigate('/product-management');
                   } else if (selectedCategory === 'sales') {
-                    navigate('/sales-statistics');
+                    setDetailModalType('sales');
+                    await loadModalData('sales');
+                    setShowDetailModal(true);
                   } else if (selectedCategory === 'operations') {
                     navigate('/operations-statistics');
                   }
@@ -956,13 +1229,17 @@ const StatisticsHQ = () => {
                   padding: '0.25rem 0.75rem',
                   fontSize: '0.75rem'
                 }}
-                onClick={() => {
+                onClick={async () => {
                   if (selectedCategory === 'tenants') {
-                    navigate('/tenant-statistics');
+                    setDetailModalType('tenants');
+                    await loadModalData('tenants');
+                    setShowDetailModal(true);
                   } else if (selectedCategory === 'products') {
                     navigate('/product-management');
                   } else if (selectedCategory === 'sales') {
-                    navigate('/sales-statistics');
+                    setDetailModalType('sales');
+                    await loadModalData('sales');
+                    setShowDetailModal(true);
                   } else if (selectedCategory === 'operations') {
                     navigate('/operations-statistics');
                   }
@@ -1152,6 +1429,626 @@ const StatisticsHQ = () => {
           </div>
         </div>
       </Modal>
+
+      {/* 상세 통계 모달 */}
+      {showDetailModal && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}
+          onClick={() => setShowDetailModal(false)}
+        >
+          <div 
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '8px',
+              width: '800px',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              position: 'relative'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 헤더 */}
+            <div style={{
+              padding: '0.75rem 1rem',
+              borderBottom: '1px solid #e5e7eb',
+              flexShrink: 0
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center' 
+              }}>
+                <h2 style={{ 
+                  margin: 0, 
+                  color: '#1f2937',
+                  fontSize: '1.125rem',
+                  fontWeight: '600'
+                }}>
+                  {detailModalType === 'tenants' ? '입점사별 상세 통계' : '매출별 상세 통계'}
+                </h2>
+                <button
+                  onClick={() => setShowDetailModal(false)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '0.25rem',
+                    borderRadius: '4px',
+                    color: '#6b7280'
+                  }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            
+            {/* 내용 영역 */}
+            <div style={{ 
+              flex: 1, 
+              overflow: 'auto',
+              padding: '1rem'
+            }}>
+          
+          {modalLoading && (
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'center', 
+              alignItems: 'center', 
+              padding: '2rem',
+              flexDirection: 'column'
+            }}>
+              <div style={{ 
+                width: '40px', 
+                height: '40px', 
+                border: '4px solid #f3f4f6', 
+                borderTop: '4px solid #3b82f6', 
+                borderRadius: '50%', 
+                animation: 'spin 1s linear infinite',
+                marginBottom: '1rem'
+              }}></div>
+              <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>
+                {detailModalType === 'tenants' ? '입점사 데이터를 불러오는 중...' : '매출 데이터를 불러오는 중...'}
+              </p>
+            </div>
+          )}
+
+          {!modalLoading && detailModalType === 'tenants' && modalData && (
+            <div>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                marginBottom: '1.5rem',
+                padding: '1rem',
+                backgroundColor: '#f8fafc',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0'
+              }}>
+                <div>
+                  <h3 style={{ margin: 0, color: '#1e293b', fontSize: '1.125rem' }}>
+                    전체 입점사 현황
+                  </h3>
+                  <p style={{ margin: '0.25rem 0 0 0', color: '#64748b', fontSize: '0.875rem' }}>
+                    총 {modalData.totalCount}개 입점사
+                  </p>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ margin: 0, color: '#059669', fontSize: '1.25rem', fontWeight: '600' }}>
+                    ₩{modalData.totalSales.toLocaleString()}
+                  </p>
+                  <p style={{ margin: '0.25rem 0 0 0', color: '#64748b', fontSize: '0.875rem' }}>
+                    총 매출
+                  </p>
+                </div>
+              </div>
+
+              <h3 style={{ marginBottom: '1rem', color: '#374151' }}>입점사별 매출 현황</h3>
+              
+              {/* 임시 데이터 안내 */}
+              <div style={{
+                backgroundColor: '#fef3c7',
+                border: '1px solid #f59e0b',
+                borderRadius: '6px',
+                padding: '0.75rem',
+                marginBottom: '1rem'
+              }}>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem',
+                  color: '#92400e',
+                  fontSize: '0.875rem'
+                }}>
+                  <span style={{ fontWeight: '600' }}>📝 참고사항:</span>
+                  <span>만족도와 성장률은 현재 샘플 데이터입니다. 실제 데이터 연동 시 업데이트 예정입니다.</span>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '2rem' }}>
+                {modalData.data.map((tenant, index) => (
+                  <div 
+                    key={tenant.id || index} 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleTenantClick(tenant);
+                    }}
+                    className="tenant-card"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '1rem',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      marginBottom: '0.5rem',
+                      backgroundColor: index < 3 ? '#f0f9ff' : '#f9fafb',
+                      cursor: 'pointer',
+                      gap: '1rem'
+                    }}
+                  >
+                    {/* 왼쪽: 기본 정보 */}
+                    <div style={{ 
+                      flex: '2', 
+                      minWidth: '0', 
+                      backgroundColor: index < 3 ? '#f0f9ff' : '#f9fafb'
+                    }}>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '0.5rem',
+                        marginBottom: '0.5rem'
+                      }}>
+                        <span style={{ 
+                          fontWeight: '600', 
+                          color: '#1f2937',
+                          fontSize: '1rem'
+                        }}>
+                          {tenant.name}
+                        </span>
+                        <span style={{
+                          backgroundColor: index < 3 ? '#3b82f6' : '#6b7280',
+                          color: 'white',
+                          fontSize: '0.75rem',
+                          padding: '0.125rem 0.5rem',
+                          borderRadius: '12px',
+                          fontWeight: '500'
+                        }}>
+                          {index < 3 ? `TOP ${index + 1}` : `${index + 1}위`}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>
+                        {tenant.email}
+                      </div>
+                      <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+                        상품 {tenant.products || 0}개 | 만족도 {(tenant.satisfaction || 0).toFixed(1)}/5.0 | 
+                        가입일: {tenant.joined_at ? new Date(tenant.joined_at).toLocaleDateString() : 'N/A'}
+                      </div>
+                    </div>
+
+                    {/* 중앙: 매출 정보 */}
+                    <div style={{ 
+                      flex: '1', 
+                      textAlign: 'center', 
+                      minWidth: '100px', 
+                      backgroundColor: index < 3 ? '#f0f9ff' : '#f9fafb'
+                    }}>
+                      <div style={{ 
+                        fontWeight: '600', 
+                        fontSize: '1.125rem',
+                        color: '#1f2937',
+                        marginBottom: '0.25rem'
+                      }}>
+                        ₩{(tenant.sales || 0).toLocaleString()}
+                      </div>
+                      <div style={{ 
+                        fontSize: '0.75rem',
+                        color: '#6b7280',
+                        fontWeight: '500'
+                      }}>
+                        총 매출
+                      </div>
+                    </div>
+
+                    {/* 오른쪽: 성장률 */}
+                    <div style={{ 
+                      flex: '0 0 auto', 
+                      textAlign: 'right', 
+                      minWidth: '80px', 
+                      backgroundColor: index < 3 ? '#f0f9ff' : '#f9fafb'
+                    }}>
+                      <div style={{ 
+                        fontSize: '1rem',
+                        color: (tenant.growth || 0) >= 0 ? '#10b981' : '#ef4444',
+                        fontWeight: '600',
+                        marginBottom: '0.25rem'
+                      }}>
+                        {(tenant.growth || 0) >= 0 ? '+' : ''}{(tenant.growth || 0).toFixed(1)}%
+                      </div>
+                      <div style={{ 
+                        fontSize: '0.75rem',
+                        color: '#6b7280',
+                        fontWeight: '500'
+                      }}>
+                        성장률
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!modalLoading && detailModalType === 'sales' && modalData && (
+            <div>
+              <h3 style={{ marginBottom: '1rem', color: '#374151' }}>월별 매출 트렌드</h3>
+              <div style={{ marginBottom: '2rem' }}>
+                {(modalData.data?.monthlySales || []).map((month, index) => (
+                  <div key={index} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '1rem',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    marginBottom: '0.5rem',
+                    backgroundColor: '#f9fafb'
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: '600', color: '#1f2937' }}>{month.month}</div>
+                      <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
+                        주문 {month.orders || 0}건 | 고객 {month.customers || 0}명
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontWeight: '600', color: '#059669' }}>
+                        ₩{(month.sales || 0).toLocaleString()}
+                      </div>
+                      <div style={{ 
+                        fontSize: '0.875rem', 
+                        color: (month.growth || 0) >= 0 ? '#059669' : '#dc2626'
+                      }}>
+                        {(month.growth || 0) >= 0 ? '+' : ''}{(month.growth || 0).toFixed(1)}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <h3 style={{ marginBottom: '1rem', color: '#374151' }}>카테고리별 매출 현황</h3>
+              <div>
+                {(modalData.data?.categorySales || []).map((cat, index) => (
+                  <div key={index} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '0.75rem',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    marginBottom: '0.5rem'
+                  }}>
+                    <span style={{ fontWeight: '500' }}>{cat.category}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <span style={{ color: '#6b7280' }}>{cat.orders || 0}건</span>
+                      <span style={{ 
+                        color: '#059669', 
+                        fontWeight: '600',
+                        minWidth: '80px',
+                        textAlign: 'right'
+                      }}>
+                        ₩{(cat.sales || 0).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+            </div>
+            
+            {/* 푸터 */}
+            <div style={{ 
+              padding: '0.75rem 1rem',
+              borderTop: '1px solid #e5e7eb',
+              flexShrink: 0
+            }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'flex-end' 
+              }}>
+                <button 
+                  className="btn" 
+                  style={{ background: '#3b82f6', color: 'white' }}
+                  onClick={() => setShowDetailModal(false)}
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 입점사 상세 정보 모달 */}
+      {showTenantDetailModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            width: '90%',
+            maxWidth: '800px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.2)'
+          }}>
+            {/* 고정 헤더 */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderBottom: '1px solid #e5e7eb',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: '#f9fafb',
+              borderRadius: '8px 8px 0 0'
+            }}>
+              <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '600', color: '#1f2937' }}>
+                입점사 상세 정보
+              </h2>
+              <button
+                onClick={() => {
+                  setShowTenantDetailModal(false);
+                  setSelectedTenant(null);
+                  setTenantDetailLoading(false);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  color: '#6b7280',
+                  padding: '0.25rem',
+                  borderRadius: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#f3f4f6'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* 스크롤 가능한 콘텐츠 영역 */}
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '1.5rem'
+            }}>
+              {tenantDetailLoading ? (
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'center', 
+                  alignItems: 'center', 
+                  padding: '2rem',
+                  flexDirection: 'column',
+                  gap: '1rem'
+                }}>
+                  <Loader className="animate-spin" size={32} />
+                  <p style={{ color: '#6b7280', margin: 0 }}>입점사 정보를 불러오는 중...</p>
+                </div>
+              ) : selectedTenant ? (
+                <div className="tenant-details">
+                  <div className="detail-section">
+                    <h3>기본 정보</h3>
+                    <div className="detail-grid">
+                      <div className="detail-item">
+                        <label>회사명</label>
+                        <span>{selectedTenant.name || selectedTenant.companyName}</span>
+                      </div>
+                      <div className="detail-item">
+                        <label>등급</label>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: (selectedTenant.grade || 1) === 1 ? '#dc3545' : (selectedTenant.grade || 1) === 2 ? '#ffc107' : '#28a745'
+                        }}>
+                          {selectedTenant.grade || 1}등급
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <label>이메일</label>
+                        <span>{selectedTenant.email}</span>
+                      </div>
+                      <div className="detail-item">
+                        <label>전화번호</label>
+                        <span>{selectedTenant.phone || 'N/A'}</span>
+                      </div>
+                      <div className="detail-item">
+                        <label>사업자등록번호</label>
+                        <span>{selectedTenant.businessNumber || 'N/A'}</span>
+                      </div>
+                      <div className="detail-item">
+                        <label>등록된 상품 수</label>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: (selectedTenant.products || selectedTenant.productCount || 0) > 10 ? '#28a745' : (selectedTenant.products || selectedTenant.productCount || 0) > 0 ? '#ffc107' : '#6c757d'
+                        }}>
+                          {(selectedTenant.products || selectedTenant.productCount || 0).toLocaleString()}개
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <label>주소</label>
+                        <span>{selectedTenant.address || 'N/A'}</span>
+                      </div>
+                      <div className="detail-item">
+                        <label>입점일</label>
+                        <span>{selectedTenant.joined_at ? new Date(selectedTenant.joined_at).toLocaleDateString() : selectedTenant.joinDate || 'N/A'}</span>
+                      </div>
+                      <div className="detail-item">
+                        <label>상태</label>
+                        <span className={`badge ${getStatusBadge(selectedTenant.status)}`}>
+                          {selectedTenant.status}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <label>수수료율</label>
+                        <span>{selectedTenant.commission || ((selectedTenant.grade || 1) === 1 ? 5.0 : (selectedTenant.grade || 1) === 2 ? 4.0 : 3.0)}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="detail-section">
+                    <h3>매출 정보</h3>
+                    <div className="detail-grid">
+                      <div className="detail-item">
+                        <label>총 매출</label>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: '#3b82f6'
+                        }}>
+                          ₩{(selectedTenant.sales || selectedTenant.totalSales || 0).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <label>주문 수</label>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: '#10b981'
+                        }}>
+                          {selectedTenant.orderCount || 0}건
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <label>성장률</label>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: (selectedTenant.growth || 0) >= 0 ? '#10b981' : '#ef4444'
+                        }}>
+                          {(selectedTenant.growth || 0) >= 0 ? '+' : ''}{(selectedTenant.growth || 0).toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <label>만족도</label>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: '#f59e0b'
+                        }}>
+                          {(selectedTenant.satisfaction || 0).toFixed(1)}/5.0
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {selectedTenant.description && (
+                    <div className="detail-section">
+                      <h3>설명</h3>
+                      <p>{selectedTenant.description}</p>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {/* 고정 푸터 */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid #e5e7eb',
+              backgroundColor: '#f9fafb',
+              borderRadius: '0 0 8px 8px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {/* 상태 변경 버튼들 */}
+                {selectedTenant?.status === '승인됨' && (
+                  <button
+                    className="btn btn-warning"
+                    onClick={() => {
+                      setShowTenantDetailModal(false);
+                      alert('일시정지 기능은 입점사 관리 페이지에서 이용해주세요.');
+                    }}
+                    title="일시정지"
+                  >
+                    <XCircle size={14} /> 일시정지
+                  </button>
+                )}
+                {selectedTenant?.status === '일시정지' && (
+                  <button
+                    className="btn btn-success"
+                    onClick={() => {
+                      setShowTenantDetailModal(false);
+                      alert('활성화 기능은 입점사 관리 페이지에서 이용해주세요.');
+                    }}
+                    title="활성화"
+                  >
+                    <CheckCircle size={14} /> 활성화
+                  </button>
+                )}
+                {(selectedTenant?.status === '승인됨' || selectedTenant?.status === '일시정지') && (
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => {
+                      setShowTenantDetailModal(false);
+                      alert('계약 종료 기능은 입점사 관리 페이지에서 이용해주세요.');
+                    }}
+                    title="계약 종료"
+                    style={{
+                      backgroundColor: '#dc3545',
+                      color: 'white',
+                      border: '1px solid #dc3545'
+                    }}
+                  >
+                    <XCircle size={14} /> 계약 종료
+                  </button>
+                )}
+              </div>
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  setShowTenantDetailModal(false);
+                  setSelectedTenant(null);
+                  setTenantDetailLoading(false);
+                }}
+                style={{
+                  backgroundColor: '#6c757d',
+                  color: 'white',
+                  border: '1px solid #6c757d',
+                  padding: '0.5rem 1rem',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

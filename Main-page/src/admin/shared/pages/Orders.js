@@ -801,6 +801,14 @@ const Orders = () => {
                   <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#007bff' }}>
                     총 결제금액: ₩{selectedOrder.amount.toLocaleString()}
                   </div>
+                  <div style={{ 
+                    fontSize: '0.875rem', 
+                    color: '#666', 
+                    marginTop: '0.5rem',
+                    fontStyle: 'italic'
+                  }}>
+                    ※ 총 결제금액에는 상품가격과 배송비가 포함되어 있습니다.
+                  </div>
                 </div>
               </div>
             </div>
