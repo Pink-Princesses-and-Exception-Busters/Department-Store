@@ -9,7 +9,10 @@ import {
   Package,
   Save,
   X,
-  Loader
+  Loader,
+  CheckCircle,
+  AlertCircle,
+  ArrowRight
 } from 'lucide-react';
 import Modal from '../../shared/components/Modal';
 import ImageUpload from '../../shared/components/ImageUpload';
@@ -19,6 +22,7 @@ import { supabase, getProducts, createProduct, updateProduct, deleteProduct, upl
 const Products = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedStatus, setSelectedStatus] = useState('all');
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]); // DB에서 가져온 카테고리 데이터
   const [loading, setLoading] = useState(true);
@@ -596,10 +600,50 @@ const Products = () => {
      return statusMap[koreanStatus] || 'forsale';
    };
 
+  // 메뉴 카드 클릭 핸들러
+  const handleMenuClick = (cardType) => {
+    if (cardType === 'all') {
+      // 전체 상품 카드 클릭
+      setSelectedStatus('all');
+      setSelectedCategory('all');
+      setSearchTerm('');
+    } else if (cardType === 'forsale') {
+      // 판매중 상품 카드 클릭
+      setSelectedStatus('forsale');
+    } else if (cardType === 'soldout') {
+      // 품절 상품 카드 클릭
+      setSelectedStatus('soldout');
+    } else if (cardType === 'low-stock') {
+      // 재고 부족 카드 클릭
+      setSelectedStatus('low-stock');
+    }
+    
+    // 상품 목록으로 스크롤
+    setTimeout(() => {
+      const productListElement = document.querySelector('.product-list-section');
+      if (productListElement) {
+        productListElement.scrollIntoView({ behavior: 'smooth' });
+      }
+    }, 100);
+  };
+
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || product.category_id === parseInt(selectedCategory);
-    return matchesSearch && matchesCategory;
+    
+    let matchesStatus;
+    if (selectedStatus === 'all') {
+      matchesStatus = true;
+    } else if (selectedStatus === 'low-stock') {
+      // 재고 부족: 품절이거나 재고가 50개 이하인 상품 (입점사 기준)
+      matchesStatus = product.stock === 0 || (product.stock && product.stock < 50);
+    } else if (selectedStatus === 'soldout') {
+      matchesStatus = product.stock === 0;
+    } else {
+      matchesStatus = product.status === selectedStatus;
+    }
+    
+    return matchesSearch && matchesCategory && matchesStatus;
   });
 
   // 로딩 중일 때 표시
@@ -679,6 +723,23 @@ const Products = () => {
             ))}
           </select>
 
+          <select
+            value={selectedStatus}
+            onChange={(e) => setSelectedStatus(e.target.value)}
+            style={{
+              padding: '0.75rem',
+              border: '1px solid #ddd',
+              borderRadius: '6px',
+              fontSize: '0.875rem',
+              minWidth: '120px'
+            }}
+          >
+            <option value="all">전체 상태</option>
+            <option value="forsale">판매중</option>
+            <option value="soldout">품절</option>
+            <option value="low-stock">재고 부족</option>
+          </select>
+
           <button className="btn" style={{ background: '#6c757d', color: 'white' }}>
             <Filter size={16} />
             필터
@@ -686,8 +747,209 @@ const Products = () => {
         </div>
       </div>
 
+
+      {/* 상품 관리 메뉴 카드 */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', marginTop: '1.5rem' }}>
+        {/* 전체 상품 카드 */}
+        <div 
+          className="card" 
+          style={{ 
+            cursor: 'pointer', 
+            transition: 'all 0.2s ease',
+            border: '1px solid #e9ecef',
+            ':hover': { borderColor: '#007bff', transform: 'translateY(-2px)' }
+          }}
+          onClick={() => handleMenuClick('all')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#007bff';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,123,255,0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e9ecef';
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ 
+              width: '48px', 
+              height: '48px', 
+              borderRadius: '12px', 
+              background: '#007bff', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}>
+              <Package size={24} color="white" />
+            </div>
+            <ArrowRight size={20} style={{ color: '#6c757d' }} />
+          </div>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem', color: '#212529' }}>
+            전체 상품
+          </h3>
+          <p style={{ color: '#6c757d', marginBottom: '1rem', fontSize: '0.875rem' }}>
+            모든 상품 보기 및 관리
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.875rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#007bff' }}>
+              <Package size={14} />
+              총 {products.length}개
+            </span>
+          </div>
+        </div>
+
+        {/* 판매중 상품 카드 */}
+        <div 
+          className="card" 
+          style={{ 
+            cursor: 'pointer', 
+            transition: 'all 0.2s ease',
+            border: '1px solid #e9ecef'
+          }}
+          onClick={() => handleMenuClick('forsale')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#28a745';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(40,167,69,0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e9ecef';
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ 
+              width: '48px', 
+              height: '48px', 
+              borderRadius: '12px', 
+              background: '#28a745', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}>
+              <CheckCircle size={24} color="white" />
+            </div>
+            <ArrowRight size={20} style={{ color: '#6c757d' }} />
+          </div>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem', color: '#212529' }}>
+            판매중 상품
+          </h3>
+          <p style={{ color: '#6c757d', marginBottom: '1rem', fontSize: '0.875rem' }}>
+            현재 판매중인 상품 관리
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.875rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#28a745' }}>
+              <CheckCircle size={14} />
+              {products.filter(p => p.status === 'forsale').length}개 판매중
+            </span>
+          </div>
+        </div>
+
+        {/* 품절 상품 카드 */}
+        <div 
+          className="card" 
+          style={{ 
+            cursor: 'pointer', 
+            transition: 'all 0.2s ease',
+            border: '1px solid #e9ecef'
+          }}
+          onClick={() => handleMenuClick('soldout')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#dc3545';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(220,53,69,0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e9ecef';
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ 
+              width: '48px', 
+              height: '48px', 
+              borderRadius: '12px', 
+              background: '#dc3545', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}>
+              <AlertCircle size={24} color="white" />
+            </div>
+            <ArrowRight size={20} style={{ color: '#6c757d' }} />
+          </div>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem', color: '#212529' }}>
+            품절 상품
+          </h3>
+          <p style={{ color: '#6c757d', marginBottom: '1rem', fontSize: '0.875rem' }}>
+            재고가 없는 상품 관리
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.875rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#dc3545' }}>
+              <AlertCircle size={14} />
+              {products.filter(p => p.stock === 0).length}개 품절
+            </span>
+          </div>
+        </div>
+
+        {/* 재고 부족 카드 */}
+        <div 
+          className="card" 
+          style={{ 
+            cursor: 'pointer', 
+            transition: 'all 0.2s ease',
+            border: '1px solid #e9ecef'
+          }}
+          onClick={() => handleMenuClick('low-stock')}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#ffc107';
+            e.currentTarget.style.transform = 'translateY(-2px)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(255,193,7,0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#e9ecef';
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = 'none';
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <div style={{ 
+              width: '48px', 
+              height: '48px', 
+              borderRadius: '12px', 
+              background: '#ffc107', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center' 
+            }}>
+              <Package size={24} color="white" />
+            </div>
+            <ArrowRight size={20} style={{ color: '#6c757d' }} />
+          </div>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem', color: '#212529' }}>
+            재고 부족
+          </h3>
+          <p style={{ color: '#6c757d', marginBottom: '1rem', fontSize: '0.875rem' }}>
+            재고가 부족한 상품 관리
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.875rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#ffc107' }}>
+              <AlertCircle size={14} />
+              {products.filter(p => p.stock < 50 && p.stock > 0).length}개 부족
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#dc3545' }}>
+              <Package size={14} />
+              {products.filter(p => p.stock === 0).length}개 품절
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* 상품 목록 */}
-      <div className="card">
+      <div className="card product-list-section">
         <div className="card-header">
           <h3 className="card-title">
             상품 목록 ({filteredProducts.length}개)
@@ -857,44 +1119,6 @@ const Products = () => {
             <p>검색 조건에 맞는 상품이 없습니다.</p>
           </div>
         )}
-      </div>
-
-      {/* 빠른 통계 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginTop: '1.5rem' }}>
-        <div className="card" style={{ textAlign: 'center' }}>
-          <h3 style={{ color: '#007bff', fontSize: '2rem', marginBottom: '0.5rem' }}>
-            {products.length}
-          </h3>
-          <p style={{ color: '#666' }}>총 상품 수</p>
-        </div>
-        
-                 <div className="card" style={{ textAlign: 'center' }}>
-           <h3 style={{ color: '#28a745', fontSize: '2rem', marginBottom: '0.5rem' }}>
-             {products.filter(p => p.status === 'forsale').length}
-           </h3>
-           <p style={{ color: '#666' }}>판매중인 상품</p>
-         </div>
-        
-        <div className="card" style={{ textAlign: 'center' }}>
-          <h3 style={{ color: '#dc3545', fontSize: '2rem', marginBottom: '0.5rem' }}>
-            {products.filter(p => p.stock === 0).length}
-          </h3>
-          <p style={{ color: '#666' }}>품절 상품</p>
-        </div>
-        
-        <div className="card" style={{ textAlign: 'center' }}>
-          <h3 style={{ color: '#ffc107', fontSize: '2rem', marginBottom: '0.5rem' }}>
-            {products.filter(p => p.stock < 50 && p.stock > 0).length}
-          </h3>
-          <p style={{ color: '#666' }}>재고 부족</p>
-        </div>
-        
-        <div className="card" style={{ textAlign: 'center' }}>
-          <h3 style={{ color: '#17a2b8', fontSize: '2rem', marginBottom: '0.5rem' }}>
-            {products.reduce((total, p) => total + (p.sales || 0), 0).toLocaleString()}
-          </h3>
-          <p style={{ color: '#666' }}>총 판매량</p>
-        </div>
       </div>
 
       {/* 상품 등록 모달 */}

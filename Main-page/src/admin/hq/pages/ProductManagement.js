@@ -254,13 +254,14 @@ const ProductManagement = () => {
     {
       id: 'inventory',
       title: '재고 관리',
-      description: '상품 재고 및 판매 현황',
+      description: '품절 및 재고 부족 상품 관리',
       icon: AlertCircle,
       color: '#ffc107',
       path: '/inventory-management',
       stats: {
         totalStock: productStats.totalStock,
         soldout: productStats.soldoutProducts,
+        lowStock: products.filter(p => p.stock && p.stock <= 10 && p.status !== 'soldout').length,
         totalSales: productStats.totalSales
       }
     },
@@ -316,7 +317,37 @@ const ProductManagement = () => {
   };
 
   const handleMenuClick = (item) => {
-    if (item.path) {
+    if (item.id === 'products') {
+      // 전체상품 카드 클릭 시 전체 상품 보기
+      setSelectedStatus('all');
+      setSelectedCategory('all');
+      setSearchTerm('');
+      setTimeout(() => {
+        const productListElement = document.querySelector('.product-list-section');
+        if (productListElement) {
+          productListElement.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+    } else if (item.id === 'hidden') {
+      // 숨김 상품 카드 클릭 시 필터를 숨김 상품으로 설정
+      setSelectedStatus('hidden');
+      // 페이지 하단의 상품 목록으로 스크롤
+      setTimeout(() => {
+        const productListElement = document.querySelector('.product-list-section');
+        if (productListElement) {
+          productListElement.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+    } else if (item.id === 'inventory') {
+      // 재고 관리 카드 클릭 시 재고 부족 상품 필터 (품절 + 재고 10개 이하)
+      setSelectedStatus('low-stock');
+      setTimeout(() => {
+        const productListElement = document.querySelector('.product-list-section');
+        if (productListElement) {
+          productListElement.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+    } else if (item.path) {
       navigate(item.path);
     }
   };
@@ -326,7 +357,16 @@ const ProductManagement = () => {
                          product.brand?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          product.id?.toString().includes(searchTerm);
     const matchesCategory = selectedCategory === 'all' || product.category_id?.toString() === selectedCategory;
-    const matchesStatus = selectedStatus === 'all' || product.status === selectedStatus;
+    
+    let matchesStatus;
+    if (selectedStatus === 'all') {
+      matchesStatus = true;
+    } else if (selectedStatus === 'low-stock') {
+      // 재고 부족: 품절이거나 재고가 10개 이하인 상품
+      matchesStatus = product.status === 'soldout' || (product.stock && product.stock <= 10);
+    } else {
+      matchesStatus = product.status === selectedStatus;
+    }
     
     return matchesSearch && matchesCategory && matchesStatus;
   });
@@ -470,15 +510,15 @@ const ProductManagement = () => {
                 {item.id === 'inventory' && (
                   <>
                     <span className="stat-item">
-                      <Package size={14} />
-                      재고: {item.stats.totalStock.toLocaleString()}개
-                    </span>
-                    <span className="stat-item">
                       <AlertCircle size={14} />
                       품절: {item.stats.soldout}건
                     </span>
                     <span className="stat-item">
-                      판매: {item.stats.totalSales.toLocaleString()}개
+                      <Package size={14} />
+                      재고부족: {item.stats.lowStock}건
+                    </span>
+                    <span className="stat-item">
+                      총재고: {item.stats.totalStock.toLocaleString()}개
                     </span>
                   </>
                 )}
@@ -500,7 +540,7 @@ const ProductManagement = () => {
       </div>
 
       {/* 전체 상품 목록 */}
-      <div className="card">
+      <div className="card product-list-section">
         <div className="card-header">
           <h2 className="card-title">전체 상품 목록</h2>
           {loading && (
@@ -598,6 +638,7 @@ const ProductManagement = () => {
               <option value="forsale">판매중</option>
               <option value="soldout">품절</option>
               <option value="hidden">숨김</option>
+              <option value="low-stock">재고 부족</option>
             </select>
             
             <button 
