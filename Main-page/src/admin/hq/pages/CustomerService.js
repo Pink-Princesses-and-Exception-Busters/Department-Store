@@ -8,7 +8,8 @@ import {
   Mail,
   Clock,
   AlertCircle,
-  User
+  User,
+  ShoppingCart
 } from 'lucide-react';
 import Modal from '../../shared/components/Modal';
 import { getAllInquiries, replyToInquiry, updateInquiryStatus } from '../../../services/inquiryService';
@@ -50,7 +51,8 @@ const CustomerService = () => {
         assignedTo: inquiry.assigned_to || '미배정',
         tenant: inquiry.product_brand || inquiry.tenant || '일반',
         reply: inquiry.reply_content,
-        replyDate: inquiry.reply_date ? new Date(inquiry.reply_date).toLocaleString('ko-KR') : null
+        replyDate: inquiry.reply_date ? new Date(inquiry.reply_date).toLocaleString('ko-KR') : null,
+        orderId: inquiry.order_id
       }));
       
       setInquiries(formattedInquiries);
@@ -127,6 +129,11 @@ const CustomerService = () => {
     setSelectedInquiry(inquiry);
     setReplyText(inquiry.reply || ''); // 기존 답변이 있으면 로드
     setShowDetailModal(true);
+  };
+
+  const handleViewOrder = (orderId) => {
+    // 주문내역 페이지로 이동 (새 탭에서 열기)
+    window.open(`/admin/orders?orderId=${orderId}`, '_blank');
   };
 
   const getStatusBadge = (status) => {
@@ -495,6 +502,25 @@ const CustomerService = () => {
                   <div className="text-sm text-gray-900">{selectedInquiry.submittedDate}</div>
                 </div>
               </div>
+              
+              {/* 주문내역 버튼 */}
+              {selectedInquiry.orderId && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-sm font-medium text-gray-600">관련 주문</label>
+                      <div className="text-sm text-gray-900">주문 ID: {selectedInquiry.orderId}</div>
+                    </div>
+                    <button
+                      onClick={() => handleViewOrder(selectedInquiry.orderId)}
+                      className="inline-flex items-center px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                    >
+                      <ShoppingCart className="w-4 h-4 mr-2" />
+                      주문내역 보기
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="bg-white border border-gray-200 rounded-lg p-4">

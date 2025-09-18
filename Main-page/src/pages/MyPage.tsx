@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { MessageSquare } from 'lucide-react'
 import { useCouponContext } from '../context/CouponContext'
 import UserInfoModal from '../components/UserInfoModal'
 import { getUserOrders, migrateLocalOrdersToDatabase, Order, cancelOrder } from '../services/orderService'
@@ -507,6 +508,29 @@ const MyPage: React.FC = () => {
         setShowOrderDetailModal(true)
     }
 
+    // 상품문의 페이지로 이동
+    const handleInquiryClick = (order: Order) => {
+        // 주문 정보를 URL 파라미터로 전달
+        const orderData = {
+            orderId: order.id,
+            orderDate: order.order_date,
+            totalAmount: order.total_amount,
+            items: order.items.map(item => ({
+                productId: item.product_id,
+                name: item.name,
+                brand: item.brand,
+                price: item.price,
+                quantity: item.quantity,
+                size: item.size,
+                color: item.color
+            }))
+        }
+        
+        // URL 파라미터로 인코딩하여 전달
+        const encodedOrderData = encodeURIComponent(JSON.stringify(orderData))
+        navigate(`/inquiry?orderData=${encodedOrderData}`)
+    }
+
     // 주문 취소
     const handleOrderCancel = async (orderId: string) => {
         const reason = prompt('주문 취소 사유를 입력해주세요:')
@@ -840,12 +864,19 @@ const MyPage: React.FC = () => {
                                                     ))}
                                                 </span>
                                                 <span>
-                                                    <div className="flex gap-2">
+                                                    <div className="flex gap-2 flex-wrap">
                                                         <button
                                                             onClick={() => handleOrderDetailClick(order)}
                                                             className="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200"
                                                         >
                                                             상세보기
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleInquiryClick(order)}
+                                                            className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 flex items-center gap-1"
+                                                        >
+                                                            <MessageSquare size={12} />
+                                                            상품문의
                                                         </button>
                                                         {order.status === '결제완료' && (
                                                             <button

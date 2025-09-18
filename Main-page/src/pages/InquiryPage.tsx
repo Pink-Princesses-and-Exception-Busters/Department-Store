@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { FiMessageSquare, FiFileText, FiUpload, FiX, FiSearch, FiHeart, FiHash, FiShoppingBag } from 'react-icons/fi'
 import { useUser } from '../context/UserContext'
 import { getUserOrders } from '../services/orderService'
@@ -33,12 +33,16 @@ interface Order {
     price: number
     quantity: number
     image: string
+    size?: string
+    color?: string
+    brand?: string
   }>
 }
 
 const InquiryPage: React.FC = () => {
   const navigate = useNavigate()
   const { currentUser } = useUser()
+  const [searchParams] = useSearchParams()
   const [formData, setFormData] = useState<InquiryForm>({
     inquiryType: '',
     productSearch: '',
@@ -78,6 +82,41 @@ const InquiryPage: React.FC = () => {
     
     loadOrders()
   }, [currentUser?.id])
+
+  // URL 파라미터에서 주문 정보를 받아서 자동으로 설정
+  useEffect(() => {
+    const orderDataParam = searchParams.get('orderData')
+    if (orderDataParam) {
+      try {
+        const orderData = JSON.parse(decodeURIComponent(orderDataParam))
+        console.log('📋 주문 정보 자동 설정:', orderData)
+        
+        // 문의 유형을 '구매내역'으로 설정
+        setFormData(prev => ({
+          ...prev,
+          inquiryType: '구매내역',
+          productSearch: orderData.orderId,
+          noProduct: false
+        }))
+        
+        // 주문 정보를 selectedProduct로 설정
+        setSelectedProduct({
+          orderId: orderData.orderId,
+          orderDate: orderData.orderDate,
+          totalAmount: orderData.totalAmount,
+          items: orderData.items
+        })
+        
+        // URL에서 orderData 파라미터 제거 (깔끔한 URL 유지)
+        const newUrl = new URL(window.location.href)
+        newUrl.searchParams.delete('orderData')
+        window.history.replaceState({}, '', newUrl.toString())
+        
+      } catch (error) {
+        console.error('주문 정보 파싱 실패:', error)
+      }
+    }
+  }, [searchParams])
 
   const inquiryTypes = [
     '회원',
@@ -151,16 +190,26 @@ const InquiryPage: React.FC = () => {
         ? `${formData.phone1}-${formData.phone2}-${formData.phone3}`
         : ''
 
-      // 선택된 상품의 브랜드 정보 추출
+      // 선택된 상품/주문 정보 추출
       let productBrand = null
       let productId = null
       let productName = null
+      let orderId = null
       
       if (selectedProduct) {
-        productBrand = selectedProduct.brand || '알 수 없는 브랜드'
-        productId = selectedProduct.id
-        productName = selectedProduct.name
-        console.log('📦 선택된 상품 정보:', { productBrand, productId, productName })
+        if (selectedProduct.orderId) {
+          // 주문 정보인 경우
+          orderId = selectedProduct.orderId
+          productBrand = selectedProduct.items[0]?.brand || '알 수 없는 브랜드'
+          productName = selectedProduct.items.map((item: any) => item.name).join(', ')
+          console.log('📦 선택된 주문 정보:', { orderId, productBrand, productName })
+        } else {
+          // 상품 정보인 경우
+          productBrand = selectedProduct.brand || '알 수 없는 브랜드'
+          productId = selectedProduct.id
+          productName = selectedProduct.name
+          console.log('📦 선택된 상품 정보:', { productBrand, productId, productName })
+        }
       }
 
       // 문의 데이터 생성
@@ -176,6 +225,7 @@ const InquiryPage: React.FC = () => {
         product_id: productId,
         product_name: productName,
         product_brand: productBrand,
+        order_id: orderId,
         // TODO: 이미지 업로드 구현 시 image_url 추가
         image_url: null
       }
@@ -206,6 +256,21 @@ const InquiryPage: React.FC = () => {
     setShowOrderModal(false)
     // 선택된 상품 정보를 문의 상품 필드에 설정
     handleInputChange('productSearch', product.name)
+  }
+
+  const handleOrderSelect = (order: Order) => {
+    // 주문 정보를 selectedProduct로 설정 (주문 ID 포함)
+    setSelectedProduct({
+      orderId: order.id,
+      orderDate: order.order_date,
+      totalAmount: order.total_amount,
+      items: order.items,
+      status: order.status,
+      brand: order.items[0]?.brand || '알 수 없는 브랜드'
+    })
+    setShowOrderModal(false)
+    // 선택된 주문 정보를 문의 상품 필드에 설정
+    handleInputChange('productSearch', order.id)
   }
 
   const formatDate = (dateString: string) => {
@@ -318,25 +383,51 @@ const InquiryPage: React.FC = () => {
                       </span>
                     </div>
                     
-                                         {/* 선택된 상품 표시 */}
+                                         {/* 선택된 상품/주문 표시 */}
                      {selectedProduct && (
                        <div className="p-4 bg-white rounded-lg border border-gray-200">
                          <div className="flex items-center justify-between">
                            <div className="flex items-center gap-3">
-                             <img 
-                               src={selectedProduct.image} 
-                               alt={selectedProduct.name} 
-                               className="w-12 h-12 object-cover rounded"
-                             />
-                             <div>
-                               <div className="mb-1">
-                                 <span className="px-2 py-1 bg-gray-800 text-white text-xs rounded">프리미엄</span>
+                             {selectedProduct.orderId ? (
+                               // 주문 정보 표시
+                               <div className="flex items-center gap-3">
+                                 <FiShoppingBag className="w-12 h-12 text-blue-600" />
+                                 <div>
+                                   <div className="mb-1">
+                                     <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">주문내역</span>
+                                   </div>
+                                   <p className="font-medium text-gray-800">주문번호: {selectedProduct.orderId}</p>
+                                   <p className="text-sm text-gray-600">
+                                     주문일: {new Date(selectedProduct.orderDate).toLocaleDateString('ko-KR')} | 
+                                     총액: {selectedProduct.totalAmount.toLocaleString()}원
+                                   </p>
+                                   <p className="text-sm text-gray-600">
+                                     브랜드: {selectedProduct.brand}
+                                   </p>
+                                   <p className="text-sm text-gray-600">
+                                     상품: {selectedProduct.items.map((item: any) => `${item.name} (${item.quantity}개)`).join(', ')}
+                                   </p>
+                                 </div>
                                </div>
-                               <p className="font-medium text-gray-800">{selectedProduct.name}</p>
-                               <p className="text-sm text-gray-600">
-                                 {formatPrice(selectedProduct.price)} × {selectedProduct.quantity}개
-                               </p>
-                             </div>
+                             ) : (
+                               // 상품 정보 표시 (기존)
+                               <>
+                                 <img 
+                                   src={selectedProduct.image} 
+                                   alt={selectedProduct.name} 
+                                   className="w-12 h-12 object-cover rounded"
+                                 />
+                                 <div>
+                                   <div className="mb-1">
+                                     <span className="px-2 py-1 bg-gray-800 text-white text-xs rounded">프리미엄</span>
+                                   </div>
+                                   <p className="font-medium text-gray-800">{selectedProduct.name}</p>
+                                   <p className="text-sm text-gray-600">
+                                     {formatPrice(selectedProduct.price)} × {selectedProduct.quantity}개
+                                   </p>
+                                 </div>
+                               </>
+                             )}
                            </div>
                            <button
                              type="button"
@@ -565,7 +656,11 @@ const InquiryPage: React.FC = () => {
                 {orders.length > 0 ? (
                   <div className="space-y-4">
                     {orders.map((order) => (
-                      <div key={order.id} className="border border-gray-200 rounded-lg p-4">
+                      <div 
+                        key={order.id} 
+                        className="border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-all duration-200"
+                        onClick={() => handleOrderSelect(order)}
+                      >
                         <div className="flex justify-between items-center mb-3">
                           <div>
                             <span className="text-sm text-gray-600">주문일: {formatDate(order.order_date)}</span>
@@ -574,9 +669,9 @@ const InquiryPage: React.FC = () => {
                             <span className="mx-2 text-gray-400">|</span>
                             <span className="text-sm text-gray-600">총 금액: {formatPrice(order.total_amount)}원</span>
                           </div>
-                                                     <span className={`px-2 py-1 rounded text-xs font-medium border ${
-                             order.status === '결제완료' ? 'border-gray-800 text-gray-800 bg-white' : 'border-gray-300 text-gray-800 bg-white'
-                           }`}>
+                          <span className={`px-2 py-1 rounded text-xs font-medium border ${
+                            order.status === '결제완료' ? 'border-gray-800 text-gray-800 bg-white' : 'border-gray-300 text-gray-800 bg-white'
+                          }`}>
                             {order.status}
                           </span>
                         </div>
@@ -585,8 +680,7 @@ const InquiryPage: React.FC = () => {
                           {order.items.map((item, index) => (
                             <div 
                               key={index}
-                              className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
-                              onClick={() => handleProductSelect(item)}
+                              className="flex items-center gap-4 p-3 bg-white rounded-lg border border-gray-100"
                             >
                               <img 
                                 src={item.image} 
@@ -595,20 +689,32 @@ const InquiryPage: React.FC = () => {
                               />
                               <div className="flex-1">
                                 <h4 className="font-medium text-gray-800 mb-1">{item.name}</h4>
+                                {item.brand && (
+                                  <p className="text-xs text-gray-500 mb-1">브랜드: {item.brand}</p>
+                                )}
                                 <p className="text-sm text-gray-600">
                                   {formatPrice(item.price)} × {item.quantity}개
                                 </p>
+                                {item.size && (
+                                  <p className="text-xs text-gray-500">사이즈: {item.size}</p>
+                                )}
+                                {item.color && (
+                                  <p className="text-xs text-gray-500">색상: {item.color}</p>
+                                )}
                               </div>
                               <div className="text-right">
                                 <p className="font-semibold text-gray-800">
                                   {formatPrice(item.price * item.quantity)}원
                                 </p>
-                                <button className="mt-2 px-3 py-1 bg-gray-800 text-white text-xs rounded hover:bg-gray-700 transition-colors">
-                                  선택
-                                </button>
                               </div>
                             </div>
                           ))}
+                        </div>
+                        
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <p className="text-sm text-gray-600 text-center">
+                            💡 이 주문 전체를 선택하려면 클릭하세요
+                          </p>
                         </div>
                       </div>
                     ))}
