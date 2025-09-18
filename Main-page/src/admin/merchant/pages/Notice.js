@@ -346,7 +346,7 @@ const Notice = () => {
             color: '#111827',
             margin: '0 0 0.5rem 0'
           }}>
-            알림
+            알림(미구현)
           </h1>
           <p style={{ 
             color: '#6b7280', 
