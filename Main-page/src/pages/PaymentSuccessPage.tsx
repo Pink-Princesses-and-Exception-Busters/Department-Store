@@ -3,7 +3,7 @@ import { useSearchParams, Link, useNavigate } from 'react-router-dom'
 import { FiCheckCircle, FiHome, FiShoppingBag } from 'react-icons/fi'
 import { useCouponContext } from '../context/CouponContext'
 import { useCartContext } from '../context/CartContext'
-import { createOrder, Order, OrderItem } from '../services/orderService'
+import { createOrder } from '../services/orderService'
 
 const PaymentSuccessPage: React.FC = () => {
   const [searchParams] = useSearchParams()
@@ -110,7 +110,7 @@ const PaymentSuccessPage: React.FC = () => {
       setOrderCreated(true)
 
       // 쿠폰 사용 처리
-      if (pendingData.selectedCoupon) {
+      if (pendingData.selectedCoupon && savedOrder.id) {
         const discountAmount = pendingData.discountAmount || 0
         useCoupon(pendingData.selectedCoupon.id, savedOrder.id, discountAmount)
         console.log('쿠폰이 사용 처리되었습니다.')
@@ -126,7 +126,7 @@ const PaymentSuccessPage: React.FC = () => {
       // 로컬스토리지에 주문 정보 저장 (기존 호환성을 위해)
       const existingOrders = JSON.parse(localStorage.getItem('orders') || '[]')
       const newOrder = {
-        id: savedOrder.id,
+        id: savedOrder.id || paymentData.orderId, // savedOrder.id가 없으면 paymentData.orderId 사용
         orderId: paymentData.orderId,
         amount: paymentData.amount,
         status: '결제완료',
