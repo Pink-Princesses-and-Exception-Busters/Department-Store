@@ -110,8 +110,8 @@ const ProductDetailPage: React.FC = () => {
       return
     }
     if (product) {
-      if (isInWishlist(product.id.toString())) {
-        removeFromWishlist(product.id.toString())
+      if (isInWishlist(product.id)) {
+        removeFromWishlist(product.id)
       } else {
         addToWishlist(product)
       }
@@ -266,7 +266,7 @@ const ProductDetailPage: React.FC = () => {
                 className="flex items-center justify-center gap-2 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                 onClick={toggleWishlist}
               >
-                <FiHeart className={product && isInWishlist(product.id.toString()) ? 'text-red-500 fill-current' : ''} />
+                <FiHeart className={product && isInWishlist(product.id) ? 'text-red-500 fill-current' : ''} />
                 관심상품
               </button>
               <button className="flex items-center justify-center gap-2 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
