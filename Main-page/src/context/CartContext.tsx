@@ -201,7 +201,7 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     const itemId = `${product.id}-${product.size || 'no-size'}-${product.color || 'no-color'}`
     
     // 기존 아이템 확인
-    const existingItemIndex = cartItems.findIndex(item => item.itemId === itemId)
+    const existingItemIndex = cartItems.findIndex(item => item.id === itemId)
     
     if (existingItemIndex >= 0) {
       // 기존 아이템의 수량 업데이트
@@ -210,15 +210,14 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
     } else {
       // 새 아이템 추가
       const newItem: CartItem = {
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        image: product.image,
+        id: itemId,
+        productId: product.id,
         quantity,
-        size: product.size,
-        color: product.color,
-        brand: product.brand,
-        itemId
+        product: {
+          ...product,
+          size: product.size,
+          color: product.color
+        }
       }
 
       if (currentUser?.id) {
@@ -226,12 +225,12 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
         const success = await cartService.addItemToUserCart(currentUser.id, newItem)
         if (success) {
           setCartItems(prev => [...prev, newItem])
-          setSelectedItems(prev => [...prev, itemId])
+          setSelectedItems(prev => [...prev, newItem.id])
         }
       } else {
         // 비회원: 로컬 상태만 업데이트 (useEffect에서 localStorage 저장)
         setCartItems(prev => [...prev, newItem])
-        setSelectedItems(prev => [...prev, itemId])
+        setSelectedItems(prev => [...prev, newItem.id])
       }
     }
   }
@@ -249,7 +248,7 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
       if (success) {
         setCartItems(prev => 
           prev.map(item => 
-            item.itemId === itemId ? { ...item, quantity: newQuantity } : item
+            item.id === itemId ? { ...item, quantity: newQuantity } : item
           )
         )
       }
@@ -257,7 +256,7 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
       // 비회원: 로컬 상태만 업데이트
       setCartItems(prev => 
         prev.map(item => 
-          item.itemId === itemId ? { ...item, quantity: newQuantity } : item
+          item.id === itemId ? { ...item, quantity: newQuantity } : item
         )
       )
     }
@@ -269,12 +268,12 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
       // 로그인 사용자: 데이터베이스에서 삭제
       const success = await cartService.removeCartItem(currentUser.id, itemId)
       if (success) {
-        setCartItems(prev => prev.filter(item => item.itemId !== itemId))
+        setCartItems(prev => prev.filter(item => item.id !== itemId))
         setSelectedItems(prev => prev.filter(id => id !== itemId))
       }
     } else {
       // 비회원: 로컬 상태만 업데이트
-      setCartItems(prev => prev.filter(item => item.itemId !== itemId))
+      setCartItems(prev => prev.filter(item => item.id !== itemId))
       setSelectedItems(prev => prev.filter(id => id !== itemId))
     }
   }
@@ -287,12 +286,12 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
       // 로그인 사용자: 데이터베이스에서 삭제
       const success = await cartService.removeSelectedItems(currentUser.id, selectedItems)
       if (success) {
-        setCartItems(prev => prev.filter(item => !selectedItems.includes(item.itemId)))
+        setCartItems(prev => prev.filter(item => !selectedItems.includes(item.id)))
         setSelectedItems([])
       }
     } else {
       // 비회원: 로컬 상태만 업데이트
-      setCartItems(prev => prev.filter(item => !selectedItems.includes(item.itemId)))
+      setCartItems(prev => prev.filter(item => !selectedItems.includes(item.id)))
       setSelectedItems([])
     }
   }
@@ -330,11 +329,11 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
       // 로그인 사용자: 데이터베이스 업데이트
       const success = await cartService.updateAllItemsSelection(currentUser.id, newSelectionState)
       if (success) {
-        setSelectedItems(newSelectionState ? cartItems.map(item => item.itemId) : [])
+        setSelectedItems(newSelectionState ? cartItems.map(item => item.id) : [])
       }
     } else {
       // 비회원: 로컬 상태만 업데이트
-      setSelectedItems(newSelectionState ? cartItems.map(item => item.itemId) : [])
+      setSelectedItems(newSelectionState ? cartItems.map(item => item.id) : [])
     }
   }
 
@@ -359,13 +358,13 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
   const isAllSelected = cartItems.length > 0 && selectedItems.length === cartItems.length
   
   const getTotalPrice = () => {
-    return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0)
+    return cartItems.reduce((total, item) => total + (item.product.price * item.quantity), 0)
   }
 
   const getSelectedTotalPrice = () => {
     return cartItems
-      .filter(item => selectedItems.includes(item.itemId))
-      .reduce((total, item) => total + (item.price * item.quantity), 0)
+      .filter(item => selectedItems.includes(item.id))
+      .reduce((total, item) => total + (item.product.price * item.quantity), 0)
   }
 
   const formatPrice = (price: number) => {

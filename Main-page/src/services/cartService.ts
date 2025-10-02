@@ -20,28 +20,38 @@ export interface DbCartItem {
 // CartItem을 DbCartItem으로 변환
 export const cartItemToDbItem = (item: CartItem, userId: string): Omit<DbCartItem, 'id' | 'created_at' | 'updated_at'> => ({
     user_id: userId,
-    product_id: item.id,
-    product_name: item.name,
-    product_price: item.price,
-    product_image: item.image,
+    product_id: item.productId,
+    product_name: item.product.name,
+    product_price: item.product.price,
+    product_image: item.product.image,
     quantity: item.quantity,
-    size: item.size,
-    color: item.color,
-    brand: item.brand,
+    size: item.product.size,
+    color: item.product.color,
+    brand: item.product.brand,
     is_selected: true
 })
 
 // DbCartItem을 CartItem으로 변환
 export const dbItemToCartItem = (dbItem: DbCartItem): CartItem => ({
-    id: dbItem.product_id,
-    name: dbItem.product_name,
-    price: dbItem.product_price,
-    image: dbItem.product_image,
+    id: `${dbItem.product_id}-${dbItem.size || 'no-size'}-${dbItem.color || 'no-color'}`,
+    productId: dbItem.product_id,
     quantity: dbItem.quantity,
-    size: dbItem.size,
-    color: dbItem.color,
-    brand: dbItem.brand,
-    itemId: `${dbItem.product_id}-${dbItem.size || 'no-size'}-${dbItem.color || 'no-color'}`
+    product: {
+        id: dbItem.product_id,
+        name: dbItem.product_name,
+        description: '', // DB에서 가져오지 않으므로 빈 문자열
+        price: dbItem.product_price,
+        brand: dbItem.brand,
+        image: dbItem.product_image,
+        category_id: 0, // DB에서 가져오지 않으므로 기본값
+        status: 'forsale' as const,
+        sales: 0,
+        stock: 0,
+        created_at: '',
+        updated_at: '',
+        size: dbItem.size,
+        color: dbItem.color
+    }
 })
 
 // 사용자 장바구니 조회
@@ -66,7 +76,7 @@ export const getUserCart = async (userId: string): Promise<{items: CartItem[], s
             items.push(cartItem)
             
             if (dbItem.is_selected) {
-                selectedIds.push(cartItem.itemId)
+                selectedIds.push(cartItem.id)
             }
         })
 
