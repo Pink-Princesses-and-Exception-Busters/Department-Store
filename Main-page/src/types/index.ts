@@ -14,7 +14,6 @@ export interface Product {
   updated_at: string
   size?: string
   color?: string
-  selectedFragrance?: string
 }
 
 export interface Category {
