@@ -20,8 +20,11 @@ const Tenants = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showTerminateModal, setShowTerminateModal] = useState(false);
+  const [showGradeModal, setShowGradeModal] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState(null);
   const [tenantToTerminate, setTenantToTerminate] = useState(null);
+  const [tenantToChangeGrade, setTenantToChangeGrade] = useState(null);
+  const [newGrade, setNewGrade] = useState(1);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
@@ -123,14 +126,54 @@ const Tenants = () => {
     return statusMap[status] || '승인대기';
   };
 
-  // 등급에 따른 수수료율
+  // 등급에 따른 수수료율 (등급이 높을수록 수수료 낮음)
   const getCommissionByGrade = (grade) => {
     const commissionMap = {
-      1: 5.0,
-      2: 4.0,
-      3: 3.0
+      1: 3.0,  // 1등급 (프리미엄) - 가장 낮은 수수료
+      2: 4.0,  // 2등급 (스탠다드) - 중간 수수료
+      3: 5.0   // 3등급 (베이직) - 가장 높은 수수료
     };
     return commissionMap[grade] || 5.0;
+  };
+
+  // 등급별 혜택 설명
+  const getGradeBenefits = (grade) => {
+    const benefitsMap = {
+      1: {
+        name: "1등급 (프리미엄)",
+        commission: "3.0%",
+        benefits: [
+          "최우선 상품 노출",
+          "프리미엄 마케팅 지원",
+          "전담 매니저 배정",
+          "우선 고객 지원",
+          "특별 프로모션 참여",
+          "최저 수수료율 적용"
+        ]
+      },
+      2: {
+        name: "2등급 (스탠다드)",
+        commission: "4.0%",
+        benefits: [
+          "우선 상품 노출",
+          "마케팅 지원",
+          "정기 상담 서비스",
+          "고객 지원",
+          "프로모션 참여"
+        ]
+      },
+      3: {
+        name: "3등급 (베이직)",
+        commission: "5.0%",
+        benefits: [
+          "기본 상품 노출",
+          "기본 마케팅 지원",
+          "이메일 지원",
+          "기본 프로모션 참여"
+        ]
+      }
+    };
+    return benefitsMap[grade] || benefitsMap[1];
   };
 
   // 브랜드별 상품 수 조회
@@ -228,7 +271,7 @@ const Tenants = () => {
           phone: newTenant.phone || null,
           business_number: newTenant.businessNumber || null,
           address: newTenant.address || null,
-          grade: 1, // 기본 등급
+          grade: 3, // 기본 등급 (3등급)
           status: 'active' // 기본적으로 활성 상태로 등록
         }])
         .select()
@@ -318,8 +361,7 @@ const Tenants = () => {
       const { error: productError } = await supabase
         .from('products')
         .update({ 
-          status: 'hidden',
-          updated_at: new Date().toISOString()
+          status: 'hidden'
         })
         .eq('brand', tenantToTerminate.companyName);
 
@@ -347,6 +389,59 @@ const Tenants = () => {
     } catch (err) {
       console.error('계약 종료 오류:', err);
       alert('계약 종료 중 오류가 발생했습니다.');
+    }
+  };
+
+  // 등급 변경 확인
+  const handleGradeChangeConfirm = (tenant) => {
+    setTenantToChangeGrade(tenant);
+    setNewGrade(tenant.grade);
+    setShowGradeModal(true);
+  };
+
+  // 등급 변경 실행
+  const handleGradeChange = async () => {
+    if (!tenantToChangeGrade) return;
+
+    try {
+      const { error } = await supabase
+        .from('brand_admins')
+        .update({ 
+          grade: newGrade
+        })
+        .eq('id', tenantToChangeGrade.id);
+
+      if (error) {
+        throw error;
+      }
+
+      // 로컬 상태 업데이트
+      setTenants(tenants.map(tenant => 
+        tenant.id === tenantToChangeGrade.id ? { 
+          ...tenant, 
+          grade: newGrade,
+          commission: getCommissionByGrade(newGrade)
+        } : tenant
+      ));
+
+      // 상세 모달이 열려있다면 해당 데이터도 업데이트
+      if (selectedTenant && selectedTenant.id === tenantToChangeGrade.id) {
+        setSelectedTenant({
+          ...selectedTenant,
+          grade: newGrade,
+          commission: getCommissionByGrade(newGrade)
+        });
+      }
+      
+      setShowGradeModal(false);
+      setTenantToChangeGrade(null);
+      
+      const gradeInfo = getGradeBenefits(newGrade);
+      alert(`'${tenantToChangeGrade.companyName}'의 등급이 ${gradeInfo.name}로 변경되었습니다.\n수수료율: ${gradeInfo.commission}`);
+      
+    } catch (err) {
+      console.error('등급 변경 오류:', err);
+      alert('등급 변경 중 오류가 발생했습니다.');
     }
   };
 
@@ -862,12 +957,30 @@ const Tenants = () => {
                     </div>
                     <div className="detail-item">
                       <label>등급</label>
-                      <span style={{ 
-                        fontWeight: '600',
-                        color: selectedTenant.grade === 1 ? '#dc3545' : selectedTenant.grade === 2 ? '#ffc107' : '#28a745'
-                      }}>
-                        {selectedTenant.grade}등급
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <span style={{ 
+                          fontWeight: '600',
+                          color: selectedTenant.grade === 1 ? '#dc3545' : selectedTenant.grade === 2 ? '#ffc107' : '#28a745'
+                        }}>
+                          {selectedTenant.grade}등급
+                        </span>
+                        <button
+                          className="btn btn-sm btn-outline"
+                          onClick={() => handleGradeChangeConfirm(selectedTenant)}
+                          style={{
+                            padding: '0.25rem 0.5rem',
+                            fontSize: '0.75rem',
+                            border: '1px solid #d1d5db',
+                            borderRadius: '4px',
+                            backgroundColor: 'white',
+                            color: '#374151',
+                            cursor: 'pointer'
+                          }}
+                          title="등급 변경"
+                        >
+                          변경
+                        </button>
+                      </div>
                     </div>
                     <div className="detail-item">
                       <label>이메일</label>
@@ -1128,6 +1241,105 @@ const Tenants = () => {
                 }}
               >
                 계약 종료
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 등급 변경 모달 */}
+      <Modal
+        isOpen={showGradeModal}
+        onClose={() => {
+          setShowGradeModal(false);
+          setTenantToChangeGrade(null);
+        }}
+        title="입점사 등급 변경"
+      >
+        {tenantToChangeGrade && (
+          <div>
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h4 style={{ margin: '0 0 1rem 0', color: '#374151' }}>등급 변경 대상</h4>
+              <div style={{
+                padding: '1rem',
+                backgroundColor: '#f9fafb',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px'
+              }}>
+                <div style={{ fontWeight: '600', fontSize: '1.1rem', color: '#1f2937' }}>
+                  {tenantToChangeGrade.companyName}
+                </div>
+                <div style={{ color: '#6b7280', fontSize: '0.9rem', marginTop: '0.25rem' }}>
+                  현재 등급: {getGradeBenefits(tenantToChangeGrade.grade).name}
+                </div>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>새 등급 선택</label>
+              <select
+                value={newGrade}
+                onChange={(e) => setNewGrade(parseInt(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '8px',
+                  fontSize: '0.875rem',
+                  backgroundColor: '#fff',
+                  cursor: 'pointer',
+                  outline: 'none'
+                }}
+              >
+                <option value={1}>1등급 (프리미엄) - 수수료 3.0%</option>
+                <option value={2}>2등급 (스탠다드) - 수수료 4.0%</option>
+                <option value={3}>3등급 (베이직) - 수수료 5.0%</option>
+              </select>
+            </div>
+
+            {/* 선택된 등급의 혜택 표시 */}
+            <div style={{
+              padding: '1rem',
+              backgroundColor: '#f0f9ff',
+              border: '1px solid #0ea5e9',
+              borderRadius: '8px',
+              marginBottom: '1.5rem'
+            }}>
+              <h5 style={{ margin: '0 0 0.5rem 0', color: '#0c4a6e' }}>
+                {getGradeBenefits(newGrade).name} 혜택
+              </h5>
+              <div style={{ color: '#0c4a6e', fontSize: '0.9rem' }}>
+                <div style={{ marginBottom: '0.5rem', fontWeight: '600' }}>
+                  수수료율: {getGradeBenefits(newGrade).commission}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                  {getGradeBenefits(newGrade).benefits.map((benefit, index) => (
+                    <li key={index}>{benefit}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => {
+                  setShowGradeModal(false);
+                  setTenantToChangeGrade(null);
+                }}
+              >
+                취소
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleGradeChange}
+                style={{
+                  backgroundColor: '#3b82f6',
+                  borderColor: '#3b82f6',
+                  color: 'white'
+                }}
+              >
+                등급 변경
               </button>
             </div>
           </div>
