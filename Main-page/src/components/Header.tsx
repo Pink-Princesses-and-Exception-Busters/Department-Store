@@ -19,7 +19,7 @@ const Header: React.FC = () => {
   
   const { getCartItemCount, syncCartOnLogout } = useCartContext()
   const location = useLocation()
-  const { currentUser, setCurrentUser } = useUser()
+  const { currentUser, setCurrentUser, logout: logoutFromContext } = useUser()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
 
@@ -98,10 +98,13 @@ const Header: React.FC = () => {
       // 장바구니 동기화 (회원 → 비회원 전환)
       await syncCartOnLogout()
       
-      await logout()
-      setCurrentUser(null)
+      // UserContext의 logout 함수 사용
+      await logoutFromContext()
+      
       alert('로그아웃되었습니다.')
-      window.location.href = '/'
+      
+      // 홈페이지로 완전한 새로고침과 함께 이동
+      window.location.replace('/')
     } catch (error) {
       console.error('Logout error:', error)
       alert('로그아웃 중 오류가 발생했습니다.')

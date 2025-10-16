@@ -53,6 +53,8 @@ export const getProductsByCategory = async (categoryId: number): Promise<Product
 // 특정 상품 가져오기
 export const getProductById = async (id: number): Promise<Product | null> => {
     try {
+        console.log('getProductById called with id:', id)
+        
         const { data, error } = await supabase
             .from('products')
             .select('*')
@@ -64,10 +66,20 @@ export const getProductById = async (id: number): Promise<Product | null> => {
             return null
         }
 
-        return {
+        if (!data) {
+            console.error('No product found for id:', id)
+            return null
+        }
+
+        console.log('Product data from database:', data)
+
+        const product = {
             ...data,
             image: data.image_urls?.[0] || '/placeholder-image.jpg'
         }
+
+        console.log('Processed product:', product)
+        return product
     } catch (error) {
         console.error('Error in getProductById:', error)
         return null

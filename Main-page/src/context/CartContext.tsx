@@ -198,7 +198,10 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
 
   // 장바구니에 상품 추가
   const addToCart = async (product: Product, quantity: number = 1) => {
-    const itemId = `${product.id}-${product.size || 'no-size'}-${product.color || 'no-color'}`
+    // 방향제 상품의 경우 향기 정보를 포함한 itemId 생성
+    const itemId = product.selectedFragrance 
+      ? `${product.id}-${product.selectedFragrance}`
+      : `${product.id}-${product.size || 'no-size'}-${product.color || 'no-color'}`
     
     // 기존 아이템 확인
     const existingItemIndex = cartItems.findIndex(item => item.id === itemId)
@@ -216,7 +219,8 @@ export const CartProvider: React.FC<CartProviderProps> = ({ children }) => {
         product: {
           ...product,
           size: product.size,
-          color: product.color
+          color: product.color,
+          selectedFragrance: product.selectedFragrance
         }
       }
 

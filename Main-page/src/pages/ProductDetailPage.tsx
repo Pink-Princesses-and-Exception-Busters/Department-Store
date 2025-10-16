@@ -16,8 +16,7 @@ const ProductDetailPage: React.FC = () => {
   const { addToRecent } = useRecentViewContext()
   const { currentUser } = useUser()
   const [quantity, setQuantity] = useState(1)
-  const [selectedSize, setSelectedSize] = useState('FREE')
-  const [selectedColor, setSelectedColor] = useState('블랙')
+  const [selectedFragrance, setSelectedFragrance] = useState('라벤더')
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -37,17 +36,27 @@ const ProductDetailPage: React.FC = () => {
     const fetchProduct = async () => {
       if (id) {
         try {
+          console.log('Fetching product with ID:', id)
           const productData = await getProductById(parseInt(id))
-          setProduct(productData)
-          // 상품이 로드되면 최근 본 상품에 추가
+          console.log('Product data received:', productData)
+          
           if (productData) {
+            setProduct(productData)
+            // 상품이 로드되면 최근 본 상품에 추가
             addToRecent(productData)
+          } else {
+            console.error('Product not found for ID:', id)
+            setProduct(null)
           }
         } catch (error) {
           console.error('Failed to fetch product:', error)
+          setProduct(null)
         } finally {
           setLoading(false)
         }
+      } else {
+        console.error('No product ID provided')
+        setLoading(false)
       }
     }
     fetchProduct()
@@ -93,8 +102,15 @@ const ProductDetailPage: React.FC = () => {
       showLoginRequired()
       return
     }
-    addToCart(product, quantity)
-    alert(`${product.name}이(가) 장바구니에 추가되었습니다.`)
+    
+    // 방향제 상품의 경우 선택된 향기 정보를 포함하여 상품 정보 수정
+    const productWithFragrance = {
+      ...product,
+      selectedFragrance: selectedFragrance
+    }
+    
+    addToCart(productWithFragrance, quantity)
+    alert(`${product.name} (${selectedFragrance} 향)이(가) 장바구니에 추가되었습니다.`)
   }
 
   const handleQuantityChange = (change: number) => {
@@ -130,16 +146,14 @@ const ProductDetailPage: React.FC = () => {
     console.log('로그인 상태 확인 성공')
     console.log('상품 정보:', product)
     console.log('수량:', quantity)
-    console.log('선택된 사이즈:', selectedSize)
-    console.log('선택된 색상:', selectedColor)
+    console.log('선택된 향기:', selectedFragrance)
     
     // 바로구매를 위한 주문 데이터 생성
     const orderData = {
       items: [{
         product: product,
         quantity: quantity,
-        selectedSize: selectedSize,
-        selectedColor: selectedColor,
+        selectedFragrance: selectedFragrance,
         price: product.price
       }],
       totalAmount: product.price * quantity,
@@ -197,36 +211,18 @@ const ProductDetailPage: React.FC = () => {
 
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">색상</label>
-                <div className="flex gap-3">
-                  {['블랙', '화이트', '베이지'].map(color => (
-                    <button
-                      key={color}
-                      className={`px-4 py-2 border rounded-lg font-medium transition-colors ${selectedColor === color
-                        ? 'border-black bg-black text-white'
-                        : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                        }`}
-                      onClick={() => setSelectedColor(color)}
-                    >
-                      {color}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">사이즈</label>
+                <label className="block text-sm font-medium text-gray-700 mb-3">향기</label>
                 <div className="flex gap-3 flex-wrap">
-                  {['XS', 'S', 'M', 'L', 'XL', 'FREE'].map(size => (
+                  {['라벤더', '로즈', '바닐라', '시트러스', '우디'].map(fragrance => (
                     <button
-                      key={size}
-                      className={`px-4 py-2 border rounded-lg font-medium transition-colors ${selectedSize === size
+                      key={fragrance}
+                      className={`px-4 py-2 border rounded-lg font-medium transition-colors ${selectedFragrance === fragrance
                         ? 'border-black bg-black text-white'
                         : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
                         }`}
-                      onClick={() => setSelectedSize(size)}
+                      onClick={() => setSelectedFragrance(fragrance)}
                     >
-                      {size}
+                      {fragrance}
                     </button>
                   ))}
                 </div>
@@ -341,16 +337,16 @@ const ProductDetailPage: React.FC = () => {
                         <td className="py-4 px-6">{product.brand || '정보 없음'}</td>
                       </tr>
                       <tr className="border-b border-gray-200">
-                        <td className="py-4 px-6 bg-gray-100 font-medium text-gray-700">소재</td>
-                        <td className="py-4 px-6">캐시미어 100%</td>
+                        <td className="py-4 px-6 bg-gray-100 font-medium text-gray-700">용량</td>
+                        <td className="py-4 px-6">500ml</td>
                       </tr>
                       <tr className="border-b border-gray-200">
                         <td className="py-4 px-6 bg-gray-100 font-medium text-gray-700">원산지</td>
-                        <td className="py-4 px-6">이탈리아</td>
+                        <td className="py-4 px-6">대한민국</td>
                       </tr>
                       <tr>
-                        <td className="py-4 px-6 bg-gray-100 font-medium text-gray-700">세탁방법</td>
-                        <td className="py-4 px-6">드라이클리닝 전용</td>
+                        <td className="py-4 px-6 bg-gray-100 font-medium text-gray-700">사용기간</td>
+                        <td className="py-4 px-6">개봉 후 6개월</td>
                       </tr>
                     </tbody>
                   </table>

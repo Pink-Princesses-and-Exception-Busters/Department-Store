@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { getCurrentUser } from '../services/userService'
+import { getCurrentUser, logout as logoutService } from '../services/userService'
 import { authLogger } from '../utils/logger'
 
 export interface User {
@@ -14,6 +14,7 @@ interface UserContextType {
   currentUser: User | null
   setCurrentUser: (user: User | null) => void
   refreshUser: () => Promise<void>
+  logout: () => Promise<void>
 }
 
 const UserContext = createContext<UserContextType | undefined>(undefined)
@@ -48,13 +49,26 @@ export const UserProvider: React.FC<UserProviderProps> = ({ children }) => {
     }
   }
 
+  // 로그아웃 함수
+  const logout = async () => {
+    try {
+      await logoutService()
+      setCurrentUser(null)
+      authLogger.log('User logged out successfully')
+    } catch (error) {
+      authLogger.error('Logout error:', error)
+      // 에러가 발생해도 사용자 상태는 초기화
+      setCurrentUser(null)
+    }
+  }
+
   // 초기 사용자 정보 로드
   useEffect(() => {
     refreshUser()
   }, [])
 
   return (
-    <UserContext.Provider value={{ currentUser, setCurrentUser, refreshUser }}>
+    <UserContext.Provider value={{ currentUser, setCurrentUser, refreshUser, logout }}>
       {children}
     </UserContext.Provider>
   )
