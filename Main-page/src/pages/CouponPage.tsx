@@ -76,8 +76,8 @@ const CouponPage: React.FC = () => {
     };
   };
 
-  const availableCouponsDisplay = availableCoupons.map(coupon => formatCouponForDisplay(coupon, false));
-  const usedCouponsDisplay = usedCoupons.map(coupon => formatCouponForDisplay(coupon, true));
+  const availableCouponsDisplay = (availableCoupons || []).map(coupon => formatCouponForDisplay(coupon, false));
+  const usedCouponsDisplay = (usedCoupons || []).map(coupon => formatCouponForDisplay(coupon, true));
 
   const expiringCoupons = availableCouponsDisplay.filter(c => c.isExpiring).length;
   const totalCoupons = availableCouponsDisplay.length + usedCouponsDisplay.length;

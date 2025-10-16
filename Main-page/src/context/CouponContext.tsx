@@ -5,6 +5,7 @@ import { useUser } from './UserContext'
 interface CouponContextType {
   selectedCoupon: Coupon | null
   availableCoupons: Coupon[]
+  usedCoupons: Coupon[]
   userCoupons: Coupon[]
   userCouponUsages: CouponUsage[]
   selectCoupon: (coupon: Coupon) => void
@@ -13,6 +14,7 @@ interface CouponContextType {
   getAvailableCoupons: (totalAmount: number) => Coupon[]
   calculateDiscount: (coupon: Coupon, totalAmount: number) => number
   addTestCoupons: () => void
+  loadUserCoupons: () => void
 }
 
 const CouponContext = createContext<CouponContextType | undefined>(undefined)
@@ -33,11 +35,12 @@ export const CouponProvider: React.FC<CouponProviderProps> = ({ children }) => {
   const { currentUser } = useUser()
   const [selectedCoupon, setSelectedCoupon] = useState<Coupon | null>(null)
   const [availableCoupons, setAvailableCoupons] = useState<Coupon[]>([])
+  const [usedCoupons, setUsedCoupons] = useState<Coupon[]>([])
   const [userCoupons, setUserCoupons] = useState<Coupon[]>([])
   const [userCouponUsages, setUserCouponUsages] = useState<CouponUsage[]>([])
 
-  // 사용자 쿠폰 데이터 로드
-  useEffect(() => {
+  // 사용자 쿠폰 데이터 로드 함수
+  const loadUserCoupons = () => {
     if (currentUser) {
       // localStorage에서 사용자별 쿠폰 데이터 로드
       const userCoupons = JSON.parse(localStorage.getItem(`coupons_${currentUser.id}`) || '[]')
@@ -45,7 +48,19 @@ export const CouponProvider: React.FC<CouponProviderProps> = ({ children }) => {
       
       setUserCoupons(userCoupons)
       setUserCouponUsages(userCouponUsages)
+      
+      // 사용 가능한 쿠폰과 사용한 쿠폰 분리
+      const available = userCoupons.filter((coupon: Coupon) => !coupon.isUsed)
+      const used = userCoupons.filter((coupon: Coupon) => coupon.isUsed)
+      
+      setAvailableCoupons(available)
+      setUsedCoupons(used)
     }
+  }
+
+  // 사용자 쿠폰 데이터 로드
+  useEffect(() => {
+    loadUserCoupons()
   }, [currentUser])
 
   // 쿠폰 선택
@@ -100,6 +115,13 @@ export const CouponProvider: React.FC<CouponProviderProps> = ({ children }) => {
     setUserCoupons(updatedCoupons)
     setUserCouponUsages(updatedUserCouponUsages)
     setSelectedCoupon(null)
+    
+    // 사용 가능한 쿠폰과 사용한 쿠폰 분리
+    const available = updatedCoupons.filter((coupon: Coupon) => !coupon.isUsed)
+    const used = updatedCoupons.filter((coupon: Coupon) => coupon.isUsed)
+    
+    setAvailableCoupons(available)
+    setUsedCoupons(used)
   }
 
   // 사용 가능한 쿠폰 조회 (최소 구매 금액 조건 확인)
@@ -174,6 +196,14 @@ export const CouponProvider: React.FC<CouponProviderProps> = ({ children }) => {
     console.log('새로운 쿠폰 데이터를 생성했습니다:', testCoupons)
 
     setUserCoupons(testCoupons)
+    
+    // 사용 가능한 쿠폰과 사용한 쿠폰 분리
+    const available = testCoupons.filter((coupon: Coupon) => !coupon.isUsed)
+    const used = testCoupons.filter((coupon: Coupon) => coupon.isUsed)
+    
+    setAvailableCoupons(available)
+    setUsedCoupons(used)
+    
     // 페이지 로드 시 선택된 쿠폰 초기화
     setSelectedCoupon(null)
   }
@@ -181,6 +211,7 @@ export const CouponProvider: React.FC<CouponProviderProps> = ({ children }) => {
   const value: CouponContextType = {
     selectedCoupon,
     availableCoupons,
+    usedCoupons,
     userCoupons,
     userCouponUsages,
     selectCoupon,
@@ -188,7 +219,8 @@ export const CouponProvider: React.FC<CouponProviderProps> = ({ children }) => {
     useCoupon,
     getAvailableCoupons,
     calculateDiscount,
-    addTestCoupons
+    addTestCoupons,
+    loadUserCoupons
   }
 
   return (

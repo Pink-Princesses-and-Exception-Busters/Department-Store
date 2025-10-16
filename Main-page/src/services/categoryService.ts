@@ -355,3 +355,144 @@ export const getProductsByLevel3Category = async (level3CategoryId: number): Pro
         }
     }
 }
+
+// 상위 카테고리의 모든 하위 카테고리 상품 가져오기
+export const getProductsByParentCategory = async (parentCategoryId: number): Promise<{products: Product[], categoryName: string, subcategories: any[]}> => {
+    try {
+        console.log('Fetching products for parent category ID:', parentCategoryId)
+        
+        // 부모 카테고리 정보 가져오기
+        const { data: parentCategory, error: parentError } = await supabase
+            .from('categories')
+            .select('*')
+            .eq('id', parentCategoryId)
+            .single()
+
+        if (parentError) {
+            console.error('Error fetching parent category:', parentError)
+            throw parentError
+        }
+
+        console.log('Found parent category:', parentCategory)
+
+        // 모든 하위 카테고리 ID들 가져오기 (재귀적으로)
+        const allSubcategoryIds = await getAllSubcategoryIds(parentCategoryId)
+        console.log('All subcategory IDs:', allSubcategoryIds)
+
+        // 모든 하위 카테고리의 상품들 가져오기
+        let products: any[] = []
+        if (allSubcategoryIds.length > 0) {
+            const { data: productsData, error: productsError } = await supabase
+                .from('products')
+                .select('*')
+                .in('category_id', allSubcategoryIds)
+                .eq('status', 'forsale')
+                .order('created_at', { ascending: false })
+
+            if (productsError) {
+                console.error('Error fetching products by parent category:', productsError)
+                throw productsError
+            }
+            
+            products = productsData || []
+            console.log('Found products:', products.length, 'products')
+        } else {
+            console.log('No subcategory IDs found, returning empty products array')
+        }
+
+        console.log('Found products:', products)
+
+        // 하위 카테고리 정보도 함께 가져오기
+        const { data: subcategories, error: subcategoriesError } = await supabase
+            .from('categories')
+            .select('*')
+            .eq('parent_id', parentCategoryId)
+            .order('name')
+
+        if (subcategoriesError) {
+            console.error('Error fetching subcategories:', subcategoriesError)
+        }
+
+        return {
+            products: products?.map(product => ({
+                ...product,
+                image: product.image_urls?.[0] || '/placeholder-image.jpg'
+            })) || [],
+            categoryName: parentCategory.name,
+            subcategories: subcategories || []
+        }
+    } catch (error) {
+        console.error('Error in getProductsByParentCategory:', error)
+        return {
+            products: [],
+            categoryName: '카테고리',
+            subcategories: []
+        }
+    }
+}
+
+// 재귀적으로 모든 하위 카테고리 ID 가져오기
+const getAllSubcategoryIds = async (parentId: number): Promise<number[]> => {
+    try {
+        console.log('Getting subcategory IDs for parent:', parentId)
+        
+        // SQL 쿼리로 직접 모든 하위 카테고리 ID 가져오기
+        const { data, error } = await supabase.rpc('get_all_subcategory_ids', {
+            parent_id: parentId
+        })
+
+        if (error) {
+            console.error('Error calling get_all_subcategory_ids function:', error)
+            // 함수가 없으면 기존 방식으로 fallback
+            return await getAllSubcategoryIdsFallback(parentId)
+        }
+
+        const allIds = data || []
+        console.log('All subcategory IDs for parent', parentId, ':', allIds)
+        return allIds
+    } catch (error) {
+        console.error('Error in getAllSubcategoryIds:', error)
+        // 에러 시 기존 방식으로 fallback
+        return await getAllSubcategoryIdsFallback(parentId)
+    }
+}
+
+// Fallback 함수 - 기존 재귀 방식
+const getAllSubcategoryIdsFallback = async (parentId: number): Promise<number[]> => {
+    try {
+        console.log('Using fallback method for parent:', parentId)
+        
+        const { data: directChildren, error } = await supabase
+            .from('categories')
+            .select('id')
+            .eq('parent_id', parentId)
+
+        if (error) {
+            console.error('Error fetching direct children:', error)
+            return []
+        }
+
+        let allIds: number[] = []
+        
+        if (directChildren && directChildren.length > 0) {
+            console.log('Found direct children:', directChildren)
+            
+            // 직접 자식들의 ID 추가
+            allIds = directChildren.map(child => child.id)
+            
+            // 각 자식에 대해 재귀적으로 하위 카테고리 ID들 가져오기
+            for (const child of directChildren) {
+                const childSubIds = await getAllSubcategoryIdsFallback(child.id)
+                allIds = [...allIds, ...childSubIds]
+            }
+        } else {
+            console.log('No direct children found for parent:', parentId)
+        }
+
+        console.log('All subcategory IDs for parent', parentId, ':', allIds)
+        return allIds
+    } catch (error) {
+        console.error('Error in getAllSubcategoryIdsFallback:', error)
+        return []
+    }
+}

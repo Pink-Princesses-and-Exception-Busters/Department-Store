@@ -166,8 +166,8 @@ const CartPage: React.FC = () => {
                       <div className="text-sm text-gray-500 mb-1">{item.product.brand}</div>
                       <div className="font-medium text-gray-900 mb-2">{item.product.name}</div>
                       <div className="text-sm text-gray-500 mb-3 space-x-4">
-                        <span>색상: 블랙</span>
-                        <span>사이즈: FREE</span>
+                        <span>색상: {item.product.color || '블랙'}</span>
+                        <span>사이즈: {item.product.size || 'FREE'}</span>
                       </div>
                       <div className="flex gap-4">
                         <button className="flex items-center gap-1 text-sm text-gray-500 hover:text-black transition-colors">

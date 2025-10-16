@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getProductsByLevel3Category } from '../services/categoryService'
+import { getProductsByLevel3Category, getProductsByParentCategory, getCategoryById } from '../services/categoryService'
+import { supabase } from '../services/supabase'
 import { Product } from '../types'
 
 const CategoryPage: React.FC = () => {
     const { categoryId, category } = useParams<{ categoryId: string; category: string }>()
     const actualCategoryId = categoryId || category
     const [products, setProducts] = useState<Product[]>([])
+    const [allProducts, setAllProducts] = useState<Product[]>([]) // 모든 상품 저장
     const [categoryName, setCategoryName] = useState<string>('')
+    const [subcategories, setSubcategories] = useState<any[]>([])
+    const [selectedSubcategory, setSelectedSubcategory] = useState<number | null>(null)
+    const [subcategoryProductCounts, setSubcategoryProductCounts] = useState<{[key: number]: number}>({})
     const [loading, setLoading] = useState<boolean>(true)
     const [error, setError] = useState<string>('')
     const navigate = useNavigate()
@@ -20,9 +25,34 @@ const CategoryPage: React.FC = () => {
                 setLoading(true)
                 setError('')
                 
-                const result = await getProductsByLevel3Category(parseInt(actualCategoryId))
-                setProducts(result.products)
-                setCategoryName(result.categoryName)
+                // 먼저 카테고리 정보를 가져와서 레벨 확인
+                const categoryInfo = await getCategoryById(parseInt(actualCategoryId))
+                
+                if (!categoryInfo) {
+                    setError('카테고리를 찾을 수 없습니다.')
+                    return
+                }
+
+                // 레벨에 따라 다른 함수 호출
+                if (categoryInfo.level === 3) {
+                    // 레벨3 카테고리인 경우 (최하위 카테고리)
+                    const result = await getProductsByLevel3Category(parseInt(actualCategoryId))
+                    setProducts(result.products)
+                    setCategoryName(result.categoryName)
+                    setSubcategories([])
+                } else {
+                    // 레벨1 또는 레벨2 카테고리인 경우 (상위 카테고리)
+                    const result = await getProductsByParentCategory(parseInt(actualCategoryId))
+                    setProducts(result.products)
+                    setAllProducts(result.products) // 모든 상품 저장
+                    setCategoryName(result.categoryName)
+                    setSubcategories(result.subcategories)
+                    
+                    // 하위 카테고리별 상품 개수 계산
+                    if (result.subcategories.length > 0) {
+                        await calculateSubcategoryProductCounts(result.subcategories, result.products)
+                    }
+                }
             } catch (err) {
                 console.error('Error fetching category products:', err)
                 setError('상품을 불러오는 중 오류가 발생했습니다.')
@@ -33,6 +63,71 @@ const CategoryPage: React.FC = () => {
 
         fetchProducts()
     }, [actualCategoryId])
+
+    // 하위 카테고리별 상품 개수 계산
+    const calculateSubcategoryProductCounts = async (subcategories: any[], allProducts: Product[]) => {
+        const counts: {[key: number]: number} = {}
+        
+        for (const subcategory of subcategories) {
+            try {
+                // 선택된 카테고리의 모든 하위 카테고리 ID들을 가져오기
+                const { data: subcategoryIds, error } = await supabase.rpc('get_all_subcategory_ids', {
+                    parent_id: subcategory.id
+                })
+                
+                if (error) {
+                    console.error('Error getting subcategory IDs for count:', error)
+                    // 에러 시 해당 카테고리 ID만으로 계산
+                    counts[subcategory.id] = allProducts.filter(product => product.category_id === subcategory.id).length
+                } else {
+                    // 선택된 카테고리 ID와 그 하위 카테고리 ID들을 모두 포함
+                    const allIds = [subcategory.id, ...(subcategoryIds || [])]
+                    counts[subcategory.id] = allProducts.filter(product => allIds.includes(product.category_id)).length
+                }
+            } catch (error) {
+                console.error('Error calculating subcategory product count:', error)
+                counts[subcategory.id] = allProducts.filter(product => product.category_id === subcategory.id).length
+            }
+        }
+        
+        setSubcategoryProductCounts(counts)
+    }
+
+    // 하위 카테고리 필터링 함수
+    const handleSubcategoryFilter = async (subcategoryId: number | null) => {
+        setSelectedSubcategory(subcategoryId)
+        
+        if (subcategoryId === null) {
+            // 전체 상품 표시
+            setProducts(allProducts)
+        } else {
+            // 특정 하위 카테고리와 그 하위의 모든 카테고리 상품들을 필터링
+            try {
+                // 선택된 카테고리의 모든 하위 카테고리 ID들을 가져오기
+                const { data: subcategoryIds, error } = await supabase.rpc('get_all_subcategory_ids', {
+                    parent_id: subcategoryId
+                })
+                
+                if (error) {
+                    console.error('Error getting subcategory IDs:', error)
+                    // 에러 시 해당 카테고리 ID만으로 필터링
+                    const filteredProducts = allProducts.filter(product => product.category_id === subcategoryId)
+                    setProducts(filteredProducts)
+                    return
+                }
+                
+                // 선택된 카테고리 ID와 그 하위 카테고리 ID들을 모두 포함
+                const allIds = [subcategoryId, ...(subcategoryIds || [])]
+                const filteredProducts = allProducts.filter(product => allIds.includes(product.category_id))
+                setProducts(filteredProducts)
+            } catch (error) {
+                console.error('Error in handleSubcategoryFilter:', error)
+                // 에러 시 해당 카테고리 ID만으로 필터링
+                const filteredProducts = allProducts.filter(product => product.category_id === subcategoryId)
+                setProducts(filteredProducts)
+            }
+        }
+    }
 
     if (loading) {
         return (
@@ -69,6 +164,42 @@ const CategoryPage: React.FC = () => {
                     <h1 className="text-3xl font-bold text-gray-900 mb-2">{categoryName}</h1>
                     <p className="text-gray-600">총 {products.length}개의 상품</p>
                 </div>
+
+                {/* 하위 카테고리 필터 */}
+                {subcategories.length > 0 && (
+                    <div className="mb-8">
+                        <h2 className="text-lg font-semibold text-gray-900 mb-4">하위 카테고리</h2>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={() => handleSubcategoryFilter(null)}
+                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                                    selectedSubcategory === null
+                                        ? 'bg-gray-800 text-white'
+                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                            >
+                                전체 ({allProducts.length})
+                            </button>
+                            {subcategories.map((subcategory) => {
+                                const subcategoryProductCount = subcategoryProductCounts[subcategory.id] || 0
+                                
+                                return (
+                                    <button
+                                        key={subcategory.id}
+                                        onClick={() => handleSubcategoryFilter(subcategory.id)}
+                                        className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                                            selectedSubcategory === subcategory.id
+                                                ? 'bg-gray-800 text-white'
+                                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                        }`}
+                                    >
+                                        {subcategory.name} ({subcategoryProductCount})
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </div>
+                )}
 
                 {/* 상품 목록 */}
                 {products.length > 0 ? (

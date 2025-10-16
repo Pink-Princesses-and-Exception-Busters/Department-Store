@@ -237,9 +237,12 @@ const Header: React.FC = () => {
                             className="mb-2"
                             onMouseEnter={() => handleCategoryHover(category)}
                           >
-                            <h3 className={`text-sm font-semibold text-gray-800 m-0 mb-1 py-1.5 cursor-pointer transition-colors duration-200 hover:text-black ${activeCategory?.id === category.id ? 'text-black bg-gray-50 py-1.5 px-2 rounded-sm -mx-2 mb-1 font-bold' : ''}`}>
+                            <Link 
+                              to={`/category/${category.id}`}
+                              className={`text-sm font-semibold text-gray-800 m-0 mb-1 py-1.5 cursor-pointer transition-colors duration-200 hover:text-black no-underline block ${activeCategory?.id === category.id ? 'text-black bg-gray-50 py-1.5 px-2 rounded-sm -mx-2 mb-1 font-bold' : ''}`}
+                            >
                               {category.name}
-                            </h3>
+                            </Link>
                           </div>
                         ))}
                       </div>
@@ -248,15 +251,18 @@ const Header: React.FC = () => {
                         activeCategory.subcategories.map((subcategory: any, index: number) => (
                           <div key={index} className="px-2">
                             <div className="mb-2">
-                              <h4 className="text-xs font-semibold text-gray-500 m-0 mb-1.5 pb-1 border-b border-gray-100">
+                              <Link 
+                                to={`/category/${subcategory.id}`}
+                                className="text-xs font-semibold text-gray-500 m-0 mb-1.5 pb-1 border-b border-gray-100 no-underline block hover:text-gray-700 transition-colors duration-200"
+                              >
                                 {subcategory.name}
-                              </h4>
+                              </Link>
                               {/* 레벨3 카테고리 (상품 링크) */}
                               {subcategory.subcategories && subcategory.subcategories.length > 0 ? (
                                 subcategory.subcategories.map((subsubcategory: any, index: number) => (
                                   <Link 
                                     key={index}
-                                    to={`/products/${subsubcategory.id}`} // /category/ -> /products/로 변경
+                                    to={`/category/${subsubcategory.id}`}
                                     className="block py-1 text-gray-500 no-underline text-xs transition-colors duration-200 hover:text-black"
                                   >
                                     {subsubcategory.name}

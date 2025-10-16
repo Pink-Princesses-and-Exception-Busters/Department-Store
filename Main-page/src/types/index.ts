@@ -12,6 +12,8 @@ export interface Product {
   stock: number
   created_at: string
   updated_at: string
+  size?: string
+  color?: string
 }
 
 export interface Category {
